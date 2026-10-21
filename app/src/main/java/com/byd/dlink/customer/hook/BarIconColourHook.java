@@ -269,24 +269,25 @@ public class BarIconColourHook {
     }
 
     private static void pullInk(View view, int band, int target) {
-        if (hasOwnBackground(view)) {
-            return;
-        }
         if (sBaseItem != null && sBaseItem.isInstance(view)) {
             giveIconItsTone(view, target);
         }
         if (view instanceof TextView) {
-            ColorStateList colours = ((TextView) view).getTextColors();
-            int current = colours == null ? 0 : colours.getDefaultColor();
-            Integer ink = betterInk(current, band, target);
-            if (ink != null) {
-                ((TextView) view).setTextColor(ink);
+            if (!hasParentWithOwnBackground(view)) {
+                ColorStateList colours = ((TextView) view).getTextColors();
+                int current = colours == null ? 0 : colours.getDefaultColor();
+                Integer ink = betterInk(current, band, target);
+                if (ink != null) {
+                    ((TextView) view).setTextColor(ink);
+                }
             }
         } else if (view instanceof ImageView) {
-            int current = inkOf((ImageView) view);
-            Integer ink = betterInk(current, band, target);
-            if (ink != null) {
-                ((ImageView) view).setColorFilter(ink);
+            if (!hasParentWithOwnBackground(view)) {
+                int current = inkOf((ImageView) view);
+                Integer ink = betterInk(current, band, target);
+                if (ink != null) {
+                    ((ImageView) view).setColorFilter(ink);
+                }
             }
         }
         if (view instanceof ViewGroup) {
@@ -298,20 +299,26 @@ public class BarIconColourHook {
     }
 
     /**
-     * Whether the view carries its own background that should be left alone. A nav item with a
-     * distinct background (the rightmost app-list button, for example) is BYD's own design and must
-     * not be recoloured by the band contrast logic.
+     * Whether any ancestor of the view carries its own background that should be left alone.
+     * A nav item with a distinct background (the rightmost app-list button, for example) is BYD's
+     * own design and its children must not be recoloured by the band contrast logic.
      */
-    private static boolean hasOwnBackground(View view) {
-        android.graphics.drawable.Drawable bg = view.getBackground();
-        if (bg == null) {
-            return false;
+    private static boolean hasParentWithOwnBackground(View view) {
+        for (ViewParent parent = view.getParent(); parent instanceof View; parent = ((View) parent).getParent()) {
+            android.graphics.drawable.Drawable bg = ((View) parent).getBackground();
+            if (bg == null) {
+                continue;
+            }
+            if (bg instanceof android.graphics.drawable.ColorDrawable) {
+                int colour = ((android.graphics.drawable.ColorDrawable) bg).getColor();
+                if (Color.alpha(colour) > 0x40 && !isInk(colour)) {
+                    return true;
+                }
+            } else {
+                return true;
+            }
         }
-        if (bg instanceof android.graphics.drawable.ColorDrawable) {
-            int colour = ((android.graphics.drawable.ColorDrawable) bg).getColor();
-            return Color.alpha(colour) > 0x40 && !isInk(colour);
-        }
-        return true;
+        return false;
     }
 
     /** @return the colour to draw with instead of {@code current}, or null if {@code current} reads better. */
