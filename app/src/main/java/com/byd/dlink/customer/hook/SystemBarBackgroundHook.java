@@ -73,6 +73,24 @@ public class SystemBarBackgroundHook {
     private static String sDecidedPackage;
     private static String sNamedPackage;
 
+    // The flags each bar's band answer below was worked out from, and that answer. Measured: the
+    // package event that names a new app arrives ~300 ms before the visibility event that carries its
+    // flags, so a decision taken in between reads the *previous* app's flags. That is what painted a
+    // band over the incoming launcher and left the screen that does not draw behind with none -- the
+    // black flash between a immersive screen and a specified colour. A bar whose colour the user picked
+    // has nothing to correct, so its answer is held until the flags themselves move. A bar that reads
+    // the screen keeps re-deriving it every pass as it always did, because its next pass -- once the
+    // switch has finished sliding in -- is what corrects a colour sampled off a moving frame.
+    private static Integer sStatusFlags;
+    private static Integer sNavFlags;
+    private static boolean sStatusBehind = true;
+    private static boolean sNavBehind = true;
+
+    // Whether a band's own pixels moved during the pass. The icons only have to be re-decided when
+    // they did: re-driving them walks the whole bar and costs 12-47 ms of the main thread per pass,
+    // which is what made the ink visibly lag behind the colour.
+    private static boolean sBandsMoved;
+
     public static void init(XC_LoadPackage.LoadPackageParam lpparam) {
         if (!SYSTEM_UI_PACKAGE.equals(lpparam.packageName)
                 || (!PrefsManager.isStatusBarBgEnabled() && !PrefsManager.isNavBarBgEnabled())) {
@@ -117,8 +135,17 @@ public class SystemBarBackgroundHook {
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) {
                     sStatusBar = new WeakReference<>(param.thisObject);
-                    // The flags the app in front draws by just changed, which can hand a band over.
-                    sRedecide = true;
+                    // The flags the app in front draws by just changed. This is the only call that can
+                    // change that answer, so it is the only one the band question is asked of.
+                    if (needsSampling()) {
+                        // A colour has to be read off the frame that follows, so let its layout decide.
+                        sRedecide = true;
+                    } else {
+                        // Nothing has to be read but the flags in hand, so deciding here puts the band
+                        // on the bar at the start of the switch instead of one layout later, which is
+                        // the gap that shows as black between two screens.
+                        apply();
+                    }
                 }
             });
             XposedBridge.log(TAG + ": bar background installed");
@@ -160,7 +187,7 @@ public class SystemBarBackgroundHook {
 
     /** A new app on screen: ask for the bars to be decided for it, by the layout that draws it. */
     private static void onTopPackage(String packageName) {
-        if (packageName == null || packageName.equals(sDecidedPackage)) {
+        if (packageName == null || packageName.equals(sDecidedPackage) || !needsSampling()) {
             return;
         }
         sNamedPackage = packageName;
@@ -168,57 +195,110 @@ public class SystemBarBackgroundHook {
     }
 
     /**
-     * Read the display and decide both bars again. This is the expensive half -- two screen captures --
-     * so it runs on the first layout after news that can change the answer: another app's turn on
-     * screen, or the configuration. A layout pass on its own is no such news, and a scrolling app
-     * re-lays out the status bar several times a second, which is what made the bars visibly
-     * re-colour inside one app.
+     * Whether a decision still has to read the display. Auto colour does, because the colour is the
+     * app's own pixels; a specified colour does not, because the only thing a new app can change is
+     * whether it draws behind the bar -- which the flags say, and which only the visibility event moves.
+     */
+    private static boolean needsSampling() {
+        return (PrefsManager.isStatusBarBgEnabled() && PrefsManager.isStatusBarBgAuto())
+                || (PrefsManager.isNavBarBgEnabled() && PrefsManager.isNavBarBgAuto());
+    }
+
+    /**
+     * Decide both bars again for the app in front. This is the expensive half only when a bar is set to
+     * auto colour, which has to read the screen: a specified colour is answered from the flags, so it is
+     * decided the moment the flags move rather than waiting for the layout that draws them. The layout
+     * pass on its own is no news at all, and a scrolling app re-lays out the status bar several times a
+     * second, which is what made the bars visibly re-colour inside one app.
      */
     private static void apply() {
         sRedecide = false;
+        sBandsMoved = false;
         if (sNamedPackage != null) {
             sDecidedPackage = sNamedPackage;
             sNamedPackage = null;
         }
         Integer visibility = topAppVisibility();
+        boolean statusAuto = PrefsManager.isStatusBarBgEnabled() && PrefsManager.isStatusBarBgAuto();
+        boolean navAuto = PrefsManager.isNavBarBgEnabled() && PrefsManager.isNavBarBgAuto();
+        if (statusAuto || !java.util.Objects.equals(visibility, sStatusFlags)) {
+            sStatusBehind = drawsBehind(visibility, View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
+            sStatusFlags = visibility;
+        }
+        if (navAuto || !java.util.Objects.equals(visibility, sNavFlags)) {
+            sNavBehind = drawsBehind(visibility, View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+            sNavFlags = visibility;
+        }
         View statusBar = bar(sStatusBarView);
-        sStatusBarColour = paint(statusBar, statusBar, View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN, true,
-                PrefsManager.isStatusBarBgAuto(), PrefsManager.isStatusBarBgImmersiveEnabled(),
-                PrefsManager.getStatusBarBgColor(), visibility);
+        sStatusBarColour = paint(statusBar, statusBar, sStatusBehind, true,
+                statusAuto, PrefsManager.isStatusBarBgImmersiveEnabled(),
+                PrefsManager.getStatusBarBgColor());
         View navBar = bar(sNavBarView);
-        sNavBarColour = paint(navBandView(), navBar, View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION,
-                false, PrefsManager.isNavBarBgAuto(), PrefsManager.isNavBarBgImmersiveEnabled(),
-                PrefsManager.getNavigationBarBgColor(), visibility);
+        sNavBarColour = paint(navBandView(), navBar, sNavBehind, false,
+                navAuto, PrefsManager.isNavBarBgImmersiveEnabled(),
+                PrefsManager.getNavigationBarBgColor());
         // Recorded here so judging the icons never costs a capture of its own. While the nav band is
         // the app's, the keys sit on the app's own pixels, and those are read once per decision.
-        sNavInkBackdrop = sNavBarColour != null ? sNavBarColour
+        Integer ink = sNavBarColour != null ? sNavBarColour
                 : navBar == null || !PrefsManager.isNavBarBgEnabled()
                         ? null : edgeColour(navBar, false);
+        boolean inkMoved = !java.util.Objects.equals(ink, sNavInkBackdrop);
+        sNavInkBackdrop = ink;
         // A bar SystemUI has not created yet has no colour to answer for, and that answer is still
         // owed; layouts ask again until both exist.
         sRedecide = statusBar == null || navBar == null;
-        redrive();
+        if (sBandsMoved || inkMoved) {
+            redrive();
+        }
     }
 
     /**
-     * Put the colours already decided back on the bars and re-decide the icons against them. Used by a
-     * layout pass, where the band views can be new ones that have never carried our colour.
+     * Whether the app in front lays its own pixels under a bar. Unknown flags are a reason to keep off
+     * the bar, not a reason to guess: guessing wrong paints over somebody's content.
      */
-    private static void repaint() {
-        putColour(navBandView(), sNavBarColour);
-        putColour(bar(sStatusBarView), sStatusBarColour);
-        redrive();
+    private static boolean drawsBehind(Integer visibility, int layoutFlag) {
+        return visibility == null || (visibility.intValue() & layoutFlag) != 0;
     }
 
+    /**
+     * Put the colours already decided back on the bars. Used by a layout pass, where the band views can
+     * be new ones that have never carried our colour.
+     */
+    private static void repaint() {
+        sBandsMoved = false;
+        putColour(navBandView(), sNavBarColour);
+        putColour(bar(sStatusBarView), sStatusBarColour);
+        if (sBandsMoved) {
+            redrive();
+        }
+    }
+
+    /**
+     * Puts {@code colour} on a band, or -- when {@code colour} is null -- the colour it carried before
+     * we ever touched it. Setting a background costs the icons a re-decision, so a band that already
+     * shows what was decided for it is left alone, and says so.
+     */
     private static void putColour(View band, Integer colour) {
         if (band == null) {
             return;
         }
-        if (colour != null) {
-            paintColour(band, colour);
+        Drawable carried = band.getBackground();
+        if (colour == null) {
+            if (!sOriginals.containsKey(band) || carried == sOriginals.get(band)) {
+                return;
+            }
+            band.setBackground(sOriginals.get(band));
         } else {
-            restore(band);
+            if (carried instanceof ColorDrawable
+                    && ((ColorDrawable) carried).getColor() == colour.intValue()) {
+                return;
+            }
+            if (!sOriginals.containsKey(band)) {
+                sOriginals.put(band, carried);
+            }
+            band.setBackground(new ColorDrawable(colour.intValue()));
         }
+        sBandsMoved = true;
     }
 
     /**
@@ -237,22 +317,18 @@ public class SystemBarBackgroundHook {
      * @param band             the view whose background we own
      * @param bar              the view that says where the bar sits on screen -- for the nav bar
      *                         these are two different views, see {@link #navBandView()}
+     * @param appDrawsBehind   whether the app in front lays its own pixels under this bar
      * @param below            whether the screen edge to match lies under this bar
      * @param auto             paint the colour the edge next to the bar really has
      * @param paintWhenBehind  override the immersive stand-down and paint the picked colour anyway
      * @param configured       the picked colour, null when this bar's background switch is off
-     * @param visibility       the top app's window flags, null while SystemUI has not reported one
      * @return the colour the bar is now showing because we painted it, null when the app owns it
      */
-    private static Integer paint(View band, View bar, int layoutFlag, boolean below, boolean auto,
-            boolean paintWhenBehind, Integer configured, Integer visibility) {
+    private static Integer paint(View band, View bar, boolean appDrawsBehind, boolean below,
+            boolean auto, boolean paintWhenBehind, Integer configured) {
         if (band == null || configured == null) {
             return restore(band);
         }
-        // Unknown means SystemUI has not told us about a window yet, which is not the same as
-        // knowing the app draws behind -- so it stays a reason to keep off the bar.
-        boolean appDrawsBehind = visibility == null
-                || (visibility & layoutFlag) != 0;
         if (auto) {
             if (appDrawsBehind) {
                 return restore(band);
@@ -280,17 +356,12 @@ public class SystemBarBackgroundHook {
     }
 
     private static Integer paintColour(View band, Integer colour) {
-        if (!sOriginals.containsKey(band)) {
-            sOriginals.put(band, band.getBackground());
-        }
-        band.setBackground(new ColorDrawable(colour.intValue()));
+        putColour(band, colour);
         return colour;
     }
 
     private static Integer restore(View band) {
-        if (band != null && sOriginals.containsKey(band)) {
-            band.setBackground(sOriginals.get(band));
-        }
+        putColour(band, null);
         return null;
     }
 
