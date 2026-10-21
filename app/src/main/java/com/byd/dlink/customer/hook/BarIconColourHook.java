@@ -102,6 +102,14 @@ public class BarIconColourHook {
     private static final Map<ImageView, Integer> sInkCache =
             Collections.synchronizedMap(new WeakHashMap<ImageView, Integer>());
 
+    // Cache for inkId() results - band values change infrequently
+    private static final Map<Integer, Integer> sInkIdCache =
+            Collections.synchronizedMap(new WeakHashMap<Integer, Integer>());
+
+    // Cache for bandToJudge() results - painted colors change infrequently
+    private static final Map<Integer, Integer> sBandJudgeCache =
+            Collections.synchronizedMap(new WeakHashMap<Integer, Integer>());
+
     // Debounce: last reapply() timestamp to avoid redundant work
     private static long sLastReapplyTime = 0;
     private static final long REAPPLY_DEBOUNCE_MS = 100;
@@ -254,6 +262,8 @@ public class BarIconColourHook {
         // Clear caches before walking - view tree may have changed
         sBackgroundCache.clear();
         sInkCache.clear();
+        sInkIdCache.clear();
+        sBandJudgeCache.clear();
 
         Resources resources = bar.getResources();
         int id = inkId(resources, band.intValue());
@@ -516,6 +526,10 @@ public class BarIconColourHook {
      *         same colours under different names still decides the same way.
      */
     private static int inkId(Resources resources, int band) {
+        Integer cached = sInkIdCache.get(band);
+        if (cached != null) {
+            return cached;
+        }
         if (sDayId == 0 || sNightId == 0) {
             sDayId = resources.getIdentifier(NAV_ICON_DAY, "color", SYSTEM_UI_PACKAGE);
             sNightId = resources.getIdentifier(NAV_ICON_NIGHT, "color", SYSTEM_UI_PACKAGE);
@@ -525,7 +539,9 @@ public class BarIconColourHook {
         }
         int day = resources.getColor(sDayId);
         int night = resources.getColor(sNightId);
-        return contrast(band, night) > contrast(band, day) ? sNightId : sDayId;
+        int result = contrast(band, night) > contrast(band, day) ? sNightId : sDayId;
+        sInkIdCache.put(band, result);
+        return result;
     }
 
     private static Field field(Class<?> owner, String name) throws NoSuchFieldException {
@@ -540,7 +556,14 @@ public class BarIconColourHook {
      * is judged as the blend the eye sees rather than as the value that was set.
      */
     private static Integer bandToJudge(Integer painted) {
-        if (painted == null || Color.alpha(painted.intValue()) < MIN_BAND_ALPHA) {
+        if (painted == null) {
+            return null;
+        }
+        Integer cached = sBandJudgeCache.get(painted);
+        if (cached != null) {
+            return cached;
+        }
+        if (Color.alpha(painted.intValue()) < MIN_BAND_ALPHA) {
             return null;
         }
         int configured = painted.intValue();
@@ -551,7 +574,9 @@ public class BarIconColourHook {
                 + (1f - fraction) * Color.green(NEUTRAL_BACKDROP) + 0.5f);
         int blue = (int) (fraction * Color.blue(configured)
                 + (1f - fraction) * Color.blue(NEUTRAL_BACKDROP) + 0.5f);
-        return Color.rgb(channel, green, blue);
+        int result = Color.rgb(channel, green, blue);
+        sBandJudgeCache.put(painted, result);
+        return result;
     }
 
     private static float luminance(int color) {
