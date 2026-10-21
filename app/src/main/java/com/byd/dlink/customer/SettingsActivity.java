@@ -128,6 +128,9 @@ public class SettingsActivity extends AppCompatActivity {
     private SwitchCompat appStartUpdateSwitch;
     private SwitchCompat appStartInstallSwitch;
     private View appStartSubPanel;
+    private SwitchCompat screenCornerSwitch;
+    private View screenCornerRow;
+    private TextView screenCornerValue;
     private LinearLayout appGainList;
     private View addAppButton;
     private final List<AppGainControl> appGainControls = new ArrayList<>();
@@ -153,6 +156,7 @@ public class SettingsActivity extends AppCompatActivity {
         setupBarHeight(navBarControl);
         setupBarBackground(statusBarBgControl);
         setupBarBackground(navBarBgControl);
+        setupScreenCorner();
         setupVolume();
         setupAppGain();
         setupAppChannel();
@@ -252,6 +256,9 @@ public class SettingsActivity extends AppCompatActivity {
         appStartUpdateSwitch = findViewById(R.id.appStartUpdateSwitch);
         appStartInstallSwitch = findViewById(R.id.appStartInstallSwitch);
         appStartSubPanel = findViewById(R.id.appStartSubPanel);
+        screenCornerSwitch = findViewById(R.id.screenCornerSwitch);
+        screenCornerRow = findViewById(R.id.screenCornerRow);
+        screenCornerValue = findViewById(R.id.screenCornerValueText);
     }
 
     /**
@@ -417,7 +424,20 @@ public class SettingsActivity extends AppCompatActivity {
         appendBar(summary, navBarControl);
         appendBarColor(summary, statusBarBgControl);
         appendBarColor(summary, navBarBgControl);
+        appendCorner(summary);
         return summary.toString();
+    }
+
+    private void appendCorner(StringBuilder summary) {
+        if (!screenCornerSwitch.isChecked()) {
+            return;
+        }
+        if (summary.length() > 0) {
+            summary.append(getString(R.string.entry_bars_separator));
+        }
+        summary.append(getString(R.string.entry_screen_corner_format,
+                Math.min(getIntProperty(PrefsManager.KEY_SCREEN_CORNER_RADIUS,
+                        PrefsManager.CORNER_DEFAULT), maxCornerRadiusPx())));
     }
 
     private void appendBarColor(StringBuilder summary, BarBackgroundControl control) {
@@ -547,6 +567,12 @@ public class SettingsActivity extends AppCompatActivity {
                     config.setProperty(control.heightKey, String.valueOf(picked));
                     saveConfig();
                     updateBarHeight(control);
+                    if (clampCornerRadiusToBars()) {
+                        updateScreenCornerRow();
+                        updateEntrySummaries();
+                        Toast.makeText(this, getString(R.string.screen_corner_clamped_format,
+                                maxCornerRadiusPx()), Toast.LENGTH_LONG).show();
+                    }
                     showRebootNotice(picked);
                 })
                 .setNegativeButton(android.R.string.cancel, null)
@@ -684,6 +710,113 @@ public class SettingsActivity extends AppCompatActivity {
             Log.e("BYD Dlink Customer", "restart SystemUI failed", t);
             Toast.makeText(this, R.string.bar_restart_failed, Toast.LENGTH_LONG).show();
         }
+    }
+
+    /**
+     * Screen corners: the arc is drawn inside the two bar bands, so its ceiling is the shorter of
+     * them, and that number moves the moment either height is changed.
+     */
+    private void setupScreenCorner() {
+        clampCornerRadiusToBars();
+        screenCornerSwitch.setChecked("true".equals(
+                config.getProperty(PrefsManager.KEY_SCREEN_CORNER_ENABLED, "false")));
+        screenCornerSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            config.setProperty(PrefsManager.KEY_SCREEN_CORNER_ENABLED, String.valueOf(isChecked));
+            saveConfig();
+            updateScreenCornerRow();
+            updateEntrySummaries();
+            if (isChecked) {
+                // The mask is put on by a layout pass the bars only have once SystemUI has installed
+                // the hook, so switching the feature on for the first time cannot be live.
+                new AlertDialog.Builder(this)
+                        .setTitle(R.string.bar_restart_title)
+                        .setMessage(R.string.screen_corner_restart_message)
+                        .setPositiveButton(R.string.bar_restart_yes,
+                                (dialog, which) -> restartSystemUi())
+                        .setNegativeButton(R.string.bar_restart_no, null)
+                        .show();
+            }
+        });
+        screenCornerRow.setOnClickListener(v -> showCornerPicker());
+        updateScreenCornerRow();
+    }
+
+    private void updateScreenCornerRow() {
+        boolean on = screenCornerSwitch.isChecked();
+        screenCornerRow.setVisibility(on ? View.VISIBLE : View.GONE);
+        if (!on) {
+            return;
+        }
+        int max = maxCornerRadiusPx();
+        screenCornerValue.setText(getString(R.string.screen_corner_value_format,
+                Math.min(getIntProperty(PrefsManager.KEY_SCREEN_CORNER_RADIUS,
+                        PrefsManager.CORNER_DEFAULT), max), max));
+    }
+
+    private void showCornerPicker() {
+        final int max = maxCornerRadiusPx();
+        final int min = Math.min(PrefsManager.CORNER_MIN, max);
+        int saved = getIntProperty(PrefsManager.KEY_SCREEN_CORNER_RADIUS,
+                PrefsManager.CORNER_DEFAULT);
+
+        final NumberPicker picker = new NumberPicker(this);
+        picker.setMinValue(min);
+        picker.setMaxValue(max);
+        picker.setValue(Math.max(min, Math.min(saved, max)));
+
+        TextView hint = new TextView(this);
+        hint.setTextSize(12f);
+        hint.setText(getString(R.string.screen_corner_picker_hint, min, max));
+
+        int pad = (int) (getResources().getDisplayMetrics().density * 24f);
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setGravity(Gravity.CENTER_HORIZONTAL);
+        content.setPadding(pad, pad / 2, pad, 0);
+        content.addView(picker);
+        content.addView(hint);
+
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.screen_corner_value_title)
+                .setView(content)
+                .setPositiveButton(android.R.string.ok, (dialog, which) -> {
+                    picker.clearFocus();
+                    int picked = Math.max(min, Math.min(picker.getValue(), max));
+                    config.setProperty(PrefsManager.KEY_SCREEN_CORNER_RADIUS,
+                            String.valueOf(picked));
+                    saveConfig();
+                    updateScreenCornerRow();
+                    updateEntrySummaries();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    /**
+     * Follow a bar height that moved: a radius that no longer fits is pulled down to the new
+     * ceiling, and one that still fits is left exactly as the user set it.
+     */
+    private boolean clampCornerRadiusToBars() {
+        int max = maxCornerRadiusPx();
+        int saved = getIntProperty(PrefsManager.KEY_SCREEN_CORNER_RADIUS,
+                PrefsManager.CORNER_DEFAULT);
+        if (saved <= max) {
+            return false;
+        }
+        config.setProperty(PrefsManager.KEY_SCREEN_CORNER_RADIUS, String.valueOf(max));
+        saveConfig();
+        return true;
+    }
+
+    /** The arc cannot reach past the band carrying it, so the shorter bar is the ceiling. */
+    private int maxCornerRadiusPx() {
+        return Math.min(effectiveBarHeightPx(statusBarControl),
+                effectiveBarHeightPx(navBarControl));
+    }
+
+    private int effectiveBarHeightPx(BarHeightControl control) {
+        int saved = getIntProperty(control.heightKey, HEIGHT_UNSET);
+        return saved >= 0 ? saved : SystemBarDimens.readHeightPx(control.dimenNames);
     }
 
     /** Colours travel as eight hex digits: a leading '#' would read as a comment to the shell. */

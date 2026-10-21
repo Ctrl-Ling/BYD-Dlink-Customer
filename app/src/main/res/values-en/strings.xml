@@ -59,6 +59,15 @@
     <string name="entry_bar_bg_item_format">%1$s %2$s</string>
     <string name="entry_bar_bg_auto_format">%1$s Auto Color</string>
     <string name="bar_immersive_tag">·incl. immersive</string>
+
+    <string name="screen_corner_title">Screen Corners</string>
+    <string name="screen_corner_summary">Draws a black arc at the two screen-facing corners of the status bar and the navigation bar to fake a rounded display. The radius cannot exceed the shorter of the two bars; screens that hide the bars stay square.\n\nThe first time you switch it on, SystemUI has to restart for the hook to load.</string>
+    <string name="screen_corner_value_title">Corner radius</string>
+    <string name="screen_corner_value_format">%1$d px · max %2$d px</string>
+    <string name="screen_corner_picker_hint">Range %1$d ~ %2$d px (the maximum is the shorter of the two bars)</string>
+    <string name="screen_corner_clamped_format">The bars got shorter, so the corner radius was clamped to %1$d px</string>
+    <string name="screen_corner_restart_message">Screen corners are on, but SystemUI has to restart before the black arcs are drawn. Restart it for you now?</string>
+    <string name="entry_screen_corner_format">Corners %1$d px</string>
     <string name="volume_title">Volume Steps</string>
     <string name="volume_switch_title">Volume Steps Hook</string>
     <string name="volume_switch_summary">Enable to set steps for each volume stream, save and reboot to apply (test feature, may not work)</string>

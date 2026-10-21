@@ -92,8 +92,11 @@ public class SystemBarBackgroundHook {
     private static boolean sBandsMoved;
 
     public static void init(XC_LoadPackage.LoadPackageParam lpparam) {
+        // The corner mask hangs off the same layout pass that says where the bars are, so this hook
+        // has to be standing whenever either feature could be asked for.
         if (!SYSTEM_UI_PACKAGE.equals(lpparam.packageName)
-                || (!PrefsManager.isStatusBarBgEnabled() && !PrefsManager.isNavBarBgEnabled())) {
+                || (!PrefsManager.isStatusBarBgEnabled() && !PrefsManager.isNavBarBgEnabled()
+                && !PrefsManager.isScreenCornerEnabled())) {
             return;
         }
         try {
@@ -121,6 +124,9 @@ public class SystemBarBackgroundHook {
                             } else {
                                 repaint();
                             }
+                            // A layout is also the only moment the bands' own heights are known, and
+                            // the shorter of the two is the ceiling on the corner arc.
+                            ScreenCornerHook.refresh(bar(sStatusBarView), bar(sNavBarView));
                         }
                     });
         } catch (Throwable t) {
@@ -409,6 +415,7 @@ public class SystemBarBackgroundHook {
     /** The configuration changed, so the bars have to be decided again for the app already in front. */
     public static void onPrefsChanged() {
         apply();
+        ScreenCornerHook.refresh(bar(sStatusBarView), bar(sNavBarView));
     }
 
     /** The nav bar view, so the icon hook can read the views inside it rather than wait to be called. */

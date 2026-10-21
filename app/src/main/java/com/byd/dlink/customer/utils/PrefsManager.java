@@ -40,6 +40,12 @@ public class PrefsManager {
     public static final String KEY_APP_START_KEEP_UPDATE = "app_start_keep_update";
     public static final String KEY_APP_START_KEEP_INSTALL = "app_start_keep_install";
 
+    // Screen corners: the panel is rectangular, so the rounding is drawn -- the two bar bands carry
+    // a black arc at their screen-facing corners. The radius has to fit inside the shorter band,
+    // and only SystemUI knows what either band currently measures, so the cap is applied there.
+    public static final String KEY_SCREEN_CORNER_ENABLED = "screen_corner_enabled";
+    public static final String KEY_SCREEN_CORNER_RADIUS = "screen_corner_radius";
+
     // Per-app output gain: one master percentage the whole car obeys, multiplied by the
     // percentage configured for the playing package. 100 means "as the system plays it".
     public static final String KEY_APP_GAIN_ENABLED = "app_gain_enabled";
@@ -72,6 +78,9 @@ public class PrefsManager {
     public static final int CHANNEL_UNSET = -1;
     /** The one per-app answer the master channel does not override: the app keeps its own choice. */
     public static final int CHANNEL_EXEMPT = -2;
+    /** Below this the arc is not visible on a 1080p panel, so the switch would look dead. */
+    public static final int CORNER_MIN = 8;
+    public static final int CORNER_DEFAULT = 32;
 
     // System properties are the config channel usable from every process,
     // including system_server, which SELinux blocks from reading /data/local/tmp.
@@ -106,6 +115,8 @@ public class PrefsManager {
             {KEY_APP_START_DISABLED, "persist.byd.dlink.as_off"},
             {KEY_APP_START_KEEP_UPDATE, "persist.byd.dlink.as_keep"},
             {KEY_APP_START_KEEP_INSTALL, "persist.byd.dlink.as_new"},
+            {KEY_SCREEN_CORNER_ENABLED, "persist.byd.dlink.corner_on"},
+            {KEY_SCREEN_CORNER_RADIUS, "persist.byd.dlink.corner_r"},
     };
 
     private static volatile boolean sPropChannelLogged = false;
@@ -337,6 +348,18 @@ public class PrefsManager {
     public static boolean isAppStartInstallPreserved() {
         return isAppStartHookEnabled() && !isAppStartManagerDisabled()
                 && getBool(KEY_APP_START_KEEP_INSTALL);
+    }
+
+    public static boolean isScreenCornerEnabled() {
+        return isGlobalEnabled() && getBool(KEY_SCREEN_CORNER_ENABLED);
+    }
+
+    /**
+     * The radius as the user set it. The arc it turns into is capped by whichever bar band is
+     * shorter, and only SystemUI can measure that, so the cap belongs there rather than here.
+     */
+    public static int getScreenCornerRadius() {
+        return Math.max(CORNER_MIN, getInt(KEY_SCREEN_CORNER_RADIUS, CORNER_DEFAULT));
     }
 
     /** The step count configured for one audio stream, or STEPS_UNSET when it should be left alone. */

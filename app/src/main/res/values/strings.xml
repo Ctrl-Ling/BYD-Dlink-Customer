@@ -59,6 +59,15 @@
     <string name="entry_bar_bg_item_format">%1$s %2$s</string>
     <string name="entry_bar_bg_auto_format">%1$s 自动变色</string>
     <string name="bar_immersive_tag">·含沉浸</string>
+
+    <string name="screen_corner_title">屏幕圆角</string>
+    <string name="screen_corner_summary">在状态栏与导航栏靠屏幕边缘的两个角画出黑角，模拟圆角屏。半径不能超过两条栏中较矮的一条；系统栏隐藏的界面仍是直角。\n\n首次开启需要重启系统界面（SystemUI）才会装载。</string>
+    <string name="screen_corner_value_title">圆角半径</string>
+    <string name="screen_corner_value_format">%1$d px · 上限 %2$d px</string>
+    <string name="screen_corner_picker_hint">可设置范围 %1$d ~ %2$d px（上限 = 状态栏与导航栏中较矮的一条）</string>
+    <string name="screen_corner_clamped_format">两条栏变矮了，圆角半径已同步为上限 %1$d px</string>
+    <string name="screen_corner_restart_message">屏幕圆角已开启，需要重启系统界面（SystemUI）才会画上黑角。是否现在替您重启？</string>
+    <string name="entry_screen_corner_format">屏幕圆角 %1$d px</string>
     <string name="volume_title">音量阶数调整</string>
     <string name="volume_switch_title">音量阶数 Hook</string>
     <string name="volume_switch_summary">打开后逐个音量选择阶数，保存并重启车机后生效（测试功能，不一定有效）</string>
