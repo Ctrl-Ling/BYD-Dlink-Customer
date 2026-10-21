@@ -3,6 +3,7 @@ package com.byd.dlink.customer.hook;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
+import android.os.CountDownTimer;
 import android.os.PowerManager;
 import android.view.WindowManager;
 
@@ -162,44 +163,91 @@ public class OtaRebootHook {
     }
 
     /**
-     * Show reboot confirmation dialog.
+     * Show reboot confirmation dialog with 30-second countdown.
+     * Auto-reboots if user doesn't respond within 30 seconds.
      */
     private static void showRebootConfirmation(String reason) {
         try {
-            // Get current activity context
             Context context = getCurrentContext();
             if (context == null) {
                 XposedBridge.log(TAG + ": No context available for reboot dialog");
                 return;
             }
 
+            final int countdownSeconds = 30;
+            final String[] currentMessage = new String[1];
+            final AlertDialog[] dialogHolder = new AlertDialog[1];
+
+            currentMessage[0] = buildRebootMessage(countdownSeconds);
+
             AlertDialog.Builder builder = new AlertDialog.Builder(context);
-            builder.setTitle("系统更新已安装");
-            builder.setMessage("系统更新已安装完成，需要重启系统以切换到新槽位。\n\n是否立即重启？\n\n选择\"否\"可以稍后手动重启。");
+            builder.setTitle("系统更新重启确认");
+            builder.setMessage(currentMessage[0]);
             builder.setCancelable(false);
 
-            builder.setPositiveButton("是", (dialog, which) -> {
-                XposedBridge.log(TAG + ": User confirmed reboot");
-                // Perform the actual reboot
-                try {
-                    PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
-                    if (pm != null) {
-                        pm.reboot(reason);
-                    }
-                } catch (Throwable t) {
-                    XposedBridge.log(TAG + ": Failed to reboot: " + t);
+            builder.setPositiveButton("立即重启", (dialog, which) -> {
+                XposedBridge.log(TAG + ": User confirmed reboot immediately");
+                if (dialogHolder[0] != null && dialogHolder[0].isShowing()) {
+                    dialogHolder[0].dismiss();
                 }
+                performReboot(context, reason);
             });
 
-            builder.setNegativeButton("否", (dialog, which) -> {
+            builder.setNegativeButton("稍后手动重启", (dialog, which) -> {
                 XposedBridge.log(TAG + ": User declined reboot, will reboot manually later");
+                if (dialogHolder[0] != null && dialogHolder[0].isShowing()) {
+                    dialogHolder[0].dismiss();
+                }
             });
 
             AlertDialog dialog = builder.create();
             dialog.getWindow().setType(WindowManager.LayoutParams.TYPE_SYSTEM_ALERT);
             dialog.show();
+            dialogHolder[0] = dialog;
+
+            CountDownTimer countdownTimer = new CountDownTimer(countdownSeconds * 1000L, 1000) {
+                @Override
+                public void onTick(long millisUntilFinished) {
+                    int secondsLeft = (int) (millisUntilFinished / 1000);
+                    currentMessage[0] = buildRebootMessage(secondsLeft);
+                    if (dialog.isShowing()) {
+                        dialog.setMessage(currentMessage[0]);
+                    }
+                }
+
+                @Override
+                public void onFinish() {
+                    XposedBridge.log(TAG + ": Countdown finished, auto-rebooting");
+                    if (dialog.isShowing()) {
+                        dialog.dismiss();
+                    }
+                    performReboot(context, reason);
+                }
+            };
+
+            countdownTimer.start();
+            XposedBridge.log(TAG + ": Reboot confirmation dialog shown with 30s countdown");
+
         } catch (Throwable t) {
             XposedBridge.log(TAG + ": Failed to show reboot dialog: " + t);
+        }
+    }
+
+    private static String buildRebootMessage(int secondsLeft) {
+        return "系统更新已安装完成，需要重启以切换到新槽位。\n\n" +
+                secondsLeft + " 秒后将自动重启。\n\n" +
+                "• 点击「立即重启」：马上重启\n" +
+                "• 点击「稍后手动重启」：取消本次重启，请自行找时间重启";
+    }
+
+    private static void performReboot(Context context, String reason) {
+        try {
+            PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+            if (pm != null) {
+                pm.reboot(reason);
+            }
+        } catch (Throwable t) {
+            XposedBridge.log(TAG + ": Failed to reboot: " + t);
         }
     }
 

@@ -126,4 +126,10 @@
     <string name="ota_update_disable_title">Disable System Updates</string>
     <string name="ota_update_disable_summary">Completely block system update checks and downloads. Once enabled, no new system updates will be received.</string>
     <string name="ota_ab_partition_info">This device uses A/B partition design. A reboot is required after update to switch to the new slot.</string>
+    <string name="ota_current_slot_format">Current slot: %1$s</string>
+    <string name="ota_current_slot_unknown">Current slot: Unknown</string>
+    <string name="ota_reboot_intercept_confirm_message">When enabled, the module hooks the system-level reboot interface (PowerManager.reboot) to intercept all reboot requests.\n\nHow it works:\n• Intercepts not only OTA update reboots, but ANY reboot triggered by any app\n• Shows a confirmation dialog with a 30-second countdown before auto-reboot\n• You can choose "Reboot Now" or "Reboot Later" to cancel this operation\n\nImportant notes:\n• This is a global intercept that may affect other reboot scenarios\n• If you choose "Reboot Later", remember to reboot manually when convenient to complete the update\n\nConfirm to enable?</string>
+    <string name="ota_update_disable_confirm_message">When enabled, the system will completely block OTA update checks and downloads.\n\nYou will not receive any new system update notifications until this feature is disabled.\n\nConfirm to enable?</string>
+    <string name="ota_confirm_yes">Yes</string>
+    <string name="ota_confirm_no">No</string>
 </resources>

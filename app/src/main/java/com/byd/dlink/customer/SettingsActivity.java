@@ -48,6 +48,7 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
+import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -106,6 +107,7 @@ public class SettingsActivity extends AppCompatActivity {
     private View appGainDivider;
     private SwitchCompat otaRebootSwitch;
     private SwitchCompat otaDisableSwitch;
+    private TextView otaCurrentSlotText;
     private LinearLayout appGainList;
     private View addAppButton;
     private final List<AppGainControl> appGainControls = new ArrayList<>();
@@ -222,6 +224,7 @@ public class SettingsActivity extends AppCompatActivity {
         appChannelMasterHint = findViewById(R.id.appChannelMasterHint);
         otaRebootSwitch = findViewById(R.id.otaRebootSwitch);
         otaDisableSwitch = findViewById(R.id.otaDisableSwitch);
+        otaCurrentSlotText = findViewById(R.id.otaCurrentSlotText);
     }
 
     /**
@@ -816,21 +819,100 @@ public class SettingsActivity extends AppCompatActivity {
      * A/B slot devices switch slots on reboot, so the user decides when that happens.
      */
     private void setupOta() {
+        // Display current slot
+        updateCurrentSlotDisplay();
+
         otaRebootSwitch.setChecked(
                 "true".equals(config.getProperty(PrefsManager.KEY_OTA_REBOOT_INTERCEPT, "false")));
         otaRebootSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            config.setProperty(PrefsManager.KEY_OTA_REBOOT_INTERCEPT, String.valueOf(isChecked));
-            saveConfig();
-            updateEntrySummaries();
+            if (isChecked) {
+                // Show confirmation dialog before enabling
+                new AlertDialog.Builder(this)
+                        .setTitle(R.string.ota_reboot_intercept_title)
+                        .setMessage(R.string.ota_reboot_intercept_confirm_message)
+                        .setPositiveButton(R.string.ota_confirm_yes, (dialog, which) -> {
+                            config.setProperty(PrefsManager.KEY_OTA_REBOOT_INTERCEPT, "true");
+                            saveConfig();
+                            updateEntrySummaries();
+                        })
+                        .setNegativeButton(R.string.ota_confirm_no, (dialog, which) -> {
+                            otaRebootSwitch.setChecked(false);
+                        })
+                        .setCancelable(false)
+                        .show();
+            } else {
+                config.setProperty(PrefsManager.KEY_OTA_REBOOT_INTERCEPT, "false");
+                saveConfig();
+                updateEntrySummaries();
+            }
         });
 
         otaDisableSwitch.setChecked(
                 "true".equals(config.getProperty(PrefsManager.KEY_OTA_UPDATE_DISABLED, "false")));
         otaDisableSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            config.setProperty(PrefsManager.KEY_OTA_UPDATE_DISABLED, String.valueOf(isChecked));
-            saveConfig();
-            updateEntrySummaries();
+            if (isChecked) {
+                // Show confirmation dialog before enabling
+                new AlertDialog.Builder(this)
+                        .setTitle(R.string.ota_update_disable_title)
+                        .setMessage(R.string.ota_update_disable_confirm_message)
+                        .setPositiveButton(R.string.ota_confirm_yes, (dialog, which) -> {
+                            config.setProperty(PrefsManager.KEY_OTA_UPDATE_DISABLED, "true");
+                            saveConfig();
+                            updateEntrySummaries();
+                        })
+                        .setNegativeButton(R.string.ota_confirm_no, (dialog, which) -> {
+                            otaDisableSwitch.setChecked(false);
+                        })
+                        .setCancelable(false)
+                        .show();
+            } else {
+                config.setProperty(PrefsManager.KEY_OTA_UPDATE_DISABLED, "false");
+                saveConfig();
+                updateEntrySummaries();
+            }
         });
+    }
+
+    /**
+     * Update the current slot display. Reads from /proc/cmdline to determine active slot.
+     */
+    private void updateCurrentSlotDisplay() {
+        if (otaCurrentSlotText == null) {
+            return;
+        }
+        String currentSlot = readCurrentSlot();
+        if (currentSlot != null) {
+            otaCurrentSlotText.setText(getString(R.string.ota_current_slot_format, currentSlot));
+        } else {
+            otaCurrentSlotText.setText(R.string.ota_current_slot_unknown);
+        }
+    }
+
+    /**
+     * Read current slot from /proc/cmdline. Looks for androidboot.slot_suffix=_a or _b.
+     */
+    private String readCurrentSlot() {
+        try {
+            Process process = Runtime.getRuntime().exec(new String[]{"su", "-c", "cat /proc/cmdline"});
+            BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+            String line;
+            String result = null;
+            while ((line = reader.readLine()) != null) {
+                if (line.contains("androidboot.slot_suffix=_a")) {
+                    result = "A";
+                    break;
+                } else if (line.contains("androidboot.slot_suffix=_b")) {
+                    result = "B";
+                    break;
+                }
+            }
+            reader.close();
+            process.waitFor();
+            return result;
+        } catch (Throwable t) {
+            Log.e("BYD Dlink Customer", "Failed to read current slot", t);
+        }
+        return null;
     }
 
     /**

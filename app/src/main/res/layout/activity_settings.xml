@@ -1198,6 +1198,16 @@
                         android:textColor="@color/colorTextSecondary"
                         android:textSize="12sp"
                         android:textStyle="italic" />
+
+                    <!-- Current Slot Info -->
+                    <TextView
+                        android:id="@+id/otaCurrentSlotText"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:textColor="@color/colorPrimary"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
         </LinearLayout>
