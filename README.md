@@ -46,7 +46,8 @@ An Xposed module for BYD automotive Dlink infotainment system, providing extensi
 
 ## Requirements
 
-- **Device**: BYD car head unit with Dlink system
+- **Test Device**: BYD 2021 Song Plus DM-i 13.5 controller
+- **Test System**: Dlink 4.0 UI + Dlink 4.5 UI Magisk module (backports Dlink 5.0 UI to Dlink 4.0 — [intro](https://mp.weixin.qq.com/s/UJ9pEdRMv9ABVD8v1OHsPQ) | [download](https://www.kdocs.cn/l/cvlTNElqC0U3))
 - **Android**: 10+ (SDK 29+)
 - **Framework**: LSPosed / Xposed
 - **Root**: Magisk installed
@@ -164,7 +165,8 @@ This module modifies system behavior. Use at your own risk. The author is not re
 
 ## 系统要求
 
-- **设备**: 比亚迪 Dlink 车机系统
+- **测试设备**: 比亚迪 2021 宋 Plus DM-i 13.5 控制器
+- **测试系统**: Dlink 4.0 UI + Dlink 4.5 UI Magisk 模块（为 Dlink 4.0 系统移植 Dlink 5.0 界面 — [介绍](https://mp.weixin.qq.com/s/UJ9pEdRMv9ABVD8v1OHsPQ) | [下载](https://www.kdocs.cn/l/cvlTNElqC0U3)）
 - **Android**: 10+ (SDK 29+)
 - **框架**: LSPosed / Xposed
 - **Root**: 已安装 Magisk
