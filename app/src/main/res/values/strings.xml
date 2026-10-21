@@ -109,6 +109,9 @@
     <string name="portrait_ratio">竖屏分屏比例</string>
     <string name="ratio_format">%d%%</string>
     <string name="about_title">关于</string>
+    <string name="about_github">GitHub 仓库</string>
+    <string name="about_github_url">https://github.com/Ctrl-Ling/BYD-Dlink-Customer</string>
+    <string name="about_description">比亚迪 Dlink 车机系统 Xposed 模块\n分屏 · 系统栏 · 音频控制</string>
     <string name="shell_command_title">Shell 分屏命令</string>
     <string name="shell_command_desc">通过 adb shell 执行以下命令，可在分屏模式下打开两个应用：</string>
     <string name="shell_command_code">am broadcast -a com.byd.dlink.customer.SPLIT_SCREEN --es pkg1 "com.example.app1" --es pkg2 "com.example.app2"</string>

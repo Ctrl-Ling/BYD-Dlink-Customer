@@ -109,6 +109,9 @@
     <string name="portrait_ratio">Portrait Split Ratio</string>
     <string name="ratio_format">%d%%</string>
     <string name="about_title">About</string>
+    <string name="about_github">GitHub Repository</string>
+    <string name="about_github_url">https://github.com/Ctrl-Ling/BYD-Dlink-Customer</string>
+    <string name="about_description">BYD Dlink Xposed Module\nSplit-Screen · System Bars · Audio Control</string>
     <string name="shell_command_title">Shell Split-Screen Command</string>
     <string name="shell_command_desc">Execute the following command via adb shell to open two apps in split-screen mode:</string>
     <string name="shell_command_code">am broadcast -a com.byd.dlink.customer.SPLIT_SCREEN --es pkg1 "com.example.app1" --es pkg2 "com.example.app2"</string>

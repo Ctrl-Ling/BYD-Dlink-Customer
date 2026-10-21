@@ -1597,12 +1597,18 @@ public class SettingsActivity extends AppCompatActivity {
 
     private void updateVersionInfo() {
         TextView versionText = findViewById(R.id.versionText);
+        MaterialButton githubButton = findViewById(R.id.githubButton);
         try {
             String version = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
             versionText.setText(getString(R.string.version_info, version));
         } catch (Exception e) {
             versionText.setText(getString(R.string.version_info, "unknown"));
         }
+        githubButton.setOnClickListener(v -> {
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setData(android.net.Uri.parse(getString(R.string.about_github_url)));
+            startActivity(intent);
+        });
     }
 
     private void updateModuleDependentViews() {
