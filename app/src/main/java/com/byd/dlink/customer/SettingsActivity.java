@@ -1826,7 +1826,24 @@ public class SettingsActivity extends AppCompatActivity {
                     cmd.append(" && setprop ").append(propKey).append(' ').append(value);
                 }
             }
-            Runtime.getRuntime().exec(new String[]{"su", "-c", cmd.toString()});
+            final Process write = Runtime.getRuntime().exec(new String[]{"su", "-c", cmd.toString()});
+            // The properties have to have landed before SystemUI is told to re-read them, and waiting
+            // for a root shell is no work to do on the UI thread.
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        write.waitFor();
+                    } catch (InterruptedException t) {
+                        Thread.currentThread().interrupt();
+                    }
+                    // SystemUI decides the bars once per window now rather than on every layout pass,
+                    // so a change made here has to be announced or it would not show until the next
+                    // app came forward.
+                    sendBroadcast(new Intent("com.byd.dlink.customer.PREFS_CHANGED")
+                            .setPackage("com.android.systemui"));
+                }
+            }).start();
             updateEntrySummaries();
         } catch (Throwable t) {
             Log.e("BYD Dlink Customer", "saveConfig error", t);

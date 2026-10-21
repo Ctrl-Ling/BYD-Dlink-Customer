@@ -34,6 +34,8 @@ public class SystemBarBackgroundHook {
     private static final String TAG = "BYD Dlink Customer";
     private static final String SYSTEM_UI_PACKAGE = "com.android.systemui";
     private static final String STATUS_BAR_CLASS = "com.android.systemui.statusbar.phone.StatusBar";
+    private static final String NAV_CONTROLLER_CLASS =
+            "com.android.systemui.statusbar.phone.navigationbar.CustomNavigationBarController";
     private static final String STATUS_BAR_VIEW = "status_bar";
     private static final String NAV_BAR_VIEW = "byd_custom_nav_bar";
 
@@ -55,6 +57,22 @@ public class SystemBarBackgroundHook {
     private static Integer sStatusBarColour;
     private static Integer sNavBarColour;
 
+    // What the nav keys have to be readable against, recorded with the decision that put the band
+    // there. Reading the display is what it costs to answer that, so it is asked once per decision
+    // and every icon that needs judging reads this instead.
+    private static Integer sNavInkBackdrop;
+
+    // Whether a new screen has been reported since the bars were last decided. Something else's turn
+    // on screen is the only news that can change either bar's colour, so a decision is asked for when
+    // that happens and taken by the next layout, which is the first frame of it on the display.
+    private static boolean sRedecide = true;
+
+    // The app the bars were last decided for, and the one just named by an event. Both the events
+    // that carry a package are BYD's own nav-key refreshes, and those re-fire inside one app -- so
+    // news of the app already decided for is no news, and one app never re-reads the display twice.
+    private static String sDecidedPackage;
+    private static String sNamedPackage;
+
     public static void init(XC_LoadPackage.LoadPackageParam lpparam) {
         if (!SYSTEM_UI_PACKAGE.equals(lpparam.packageName)
                 || (!PrefsManager.isStatusBarBgEnabled() && !PrefsManager.isNavBarBgEnabled())) {
@@ -73,12 +91,17 @@ public class SystemBarBackgroundHook {
                             String name = entryName(bar);
                             if (STATUS_BAR_VIEW.equals(name)) {
                                 sStatusBarView = new WeakReference<>(bar);
-                                apply();
                             } else if (NAV_BAR_VIEW.equals(name)) {
                                 sNavBarView = new WeakReference<>(bar);
-                                // A bar that has just been laid out holds items that were bound and
-                                // coloured before it knew what was on screen; apply() re-decides them.
+                            } else {
+                                return;
+                            }
+                            // Reading the display is the expensive half, so a layout only does it when
+                            // something that can change the answer has been reported since the last one.
+                            if (sRedecide) {
                                 apply();
+                            } else {
+                                repaint();
                             }
                         }
                     });
@@ -87,26 +110,76 @@ public class SystemBarBackgroundHook {
         }
         try {
             Class<?> statusBar = XposedHelpers.findClass(STATUS_BAR_CLASS, lpparam.classLoader);
-            // Every window change passes through here, which is what makes a bar repaint for the
-            // app that came forward. Hooking all overloads also avoids guessing this fork's
+            // What the app in front draws by: flags can hand a band over to it, and reading them here
+            // is what lets a bar stand down. Hooking all overloads also avoids guessing this fork's
             // parameter list.
             XposedBridge.hookAllMethods(statusBar, "setSystemUiVisibility", new XC_MethodHook() {
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) {
                     sStatusBar = new WeakReference<>(param.thisObject);
-                    // The bars' icons have to be re-decided on exactly this event, and apply() does it:
-                    // an item is bound once, before any window has told SystemUI what is on screen. This
-                    // is not a layout pass, so re-running BYD's own colour setter is safe.
-                    apply();
+                    // The flags the app in front draws by just changed, which can hand a band over.
+                    sRedecide = true;
                 }
             });
             XposedBridge.log(TAG + ": bar background installed");
         } catch (Throwable t) {
             XposedBridge.log(TAG + ": bar background visibility hook not installed: " + t);
         }
+        hookTopApp(lpparam.classLoader);
     }
 
+    /**
+     * BYD's own two ways of naming the app on screen: StatusBar is told the top package by
+     * system_server, and its nav controller re-inks the keys for it. Either one is patchy on this
+     * fork -- measured, a third-party app changes hands with neither, while another re-fires the
+     * controller several times while one screen scrolls -- so both are asked and the package is what
+     * tells them apart. Contrast that with a layout pass, which came 41 times in fifteen swipes of a
+     * single app.
+     */
+    private static void hookTopApp(ClassLoader classLoader) {
+        XC_MethodHook callback = new XC_MethodHook() {
+            @Override
+            protected void beforeHookedMethod(MethodHookParam param) {
+                onTopPackage(param.args.length == 0 ? null : asPackage(param.args[0]));
+            }
+        };
+        try {
+            Class<?> statusBar = XposedHelpers.findClass(STATUS_BAR_CLASS, classLoader);
+            XposedBridge.hookAllMethods(statusBar, "setPackageNameForStatusAndNaviationBar", callback);
+            Class<?> controller = XposedHelpers.findClass(NAV_CONTROLLER_CLASS, classLoader);
+            XposedBridge.hookAllMethods(controller, "updateNavBarIcon", callback);
+            XposedBridge.log(TAG + ": bar top-app hook installed");
+        } catch (Throwable t) {
+            XposedBridge.log(TAG + ": bar top-app hook not installed: " + t);
+        }
+    }
+
+    private static String asPackage(Object named) {
+        return named instanceof String ? (String) named : null;
+    }
+
+    /** A new app on screen: ask for the bars to be decided for it, by the layout that draws it. */
+    private static void onTopPackage(String packageName) {
+        if (packageName == null || packageName.equals(sDecidedPackage)) {
+            return;
+        }
+        sNamedPackage = packageName;
+        sRedecide = true;
+    }
+
+    /**
+     * Read the display and decide both bars again. This is the expensive half -- two screen captures --
+     * so it runs on the first layout after news that can change the answer: another app's turn on
+     * screen, or the configuration. A layout pass on its own is no such news, and a scrolling app
+     * re-lays out the status bar several times a second, which is what made the bars visibly
+     * re-colour inside one app.
+     */
     private static void apply() {
+        sRedecide = false;
+        if (sNamedPackage != null) {
+            sDecidedPackage = sNamedPackage;
+            sNamedPackage = null;
+        }
         Integer visibility = topAppVisibility();
         View statusBar = bar(sStatusBarView);
         sStatusBarColour = paint(statusBar, statusBar, View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN, true,
@@ -116,10 +189,45 @@ public class SystemBarBackgroundHook {
         sNavBarColour = paint(navBandView(), navBar, View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION,
                 false, PrefsManager.isNavBarBgAuto(), PrefsManager.isNavBarBgImmersiveEnabled(),
                 PrefsManager.getNavigationBarBgColor(), visibility);
-        // Whatever path decided the bands -- a window change, either bar's layout pass -- the icons on
-        // them have to be re-decided against the result. Repainting the band without re-inking the keys
-        // leaves the previous scene's ink sitting on the new colour: measured, a status-bar layout pass
-        // alone repainted the nav band white after a dark app, and every key kept a white filter.
+        // Recorded here so judging the icons never costs a capture of its own. While the nav band is
+        // the app's, the keys sit on the app's own pixels, and those are read once per decision.
+        sNavInkBackdrop = sNavBarColour != null ? sNavBarColour
+                : navBar == null || !PrefsManager.isNavBarBgEnabled()
+                        ? null : edgeColour(navBar, false);
+        // A bar SystemUI has not created yet has no colour to answer for, and that answer is still
+        // owed; layouts ask again until both exist.
+        sRedecide = statusBar == null || navBar == null;
+        redrive();
+    }
+
+    /**
+     * Put the colours already decided back on the bars and re-decide the icons against them. Used by a
+     * layout pass, where the band views can be new ones that have never carried our colour.
+     */
+    private static void repaint() {
+        putColour(navBandView(), sNavBarColour);
+        putColour(bar(sStatusBarView), sStatusBarColour);
+        redrive();
+    }
+
+    private static void putColour(View band, Integer colour) {
+        if (band == null) {
+            return;
+        }
+        if (colour != null) {
+            paintColour(band, colour);
+        } else {
+            restore(band);
+        }
+    }
+
+    /**
+     * The icons have to be re-decided against whatever the bands now show. Repainting a band without
+     * re-inking the keys leaves the previous scene's filters sitting on the new colour: measured, a
+     * status-bar layout pass alone repainted the nav band white after a dark app, and every key kept a
+     * white filter.
+     */
+    private static void redrive() {
         BarIconColourHook.reapply();
     }
 
@@ -215,18 +323,21 @@ public class SystemBarBackgroundHook {
     }
 
     /**
-     * What the nav keys are really drawn on. Ours when we paint the band; otherwise the app's own
-     * pixels showing through the transparent bar, read the same way auto colour reads an edge. A
-     * stand-down still leaves the icons needing ink that reads against those pixels -- BYD does not
-     * re-decide a bitmap key once it has tinted one, so a stale white filter survives onto a light
-     * home screen.
+     * What the nav keys are really drawn on: our band when we paint it, the app's own pixels showing
+     * through when we stand down. A stand-down still leaves the icons needing ink that reads against
+     * those pixels -- BYD does not re-decide a bitmap key once it has tinted one, so a stale white
+     * filter survives onto a light home screen.
+     *
+     * This is the answer the last decision recorded, never a fresh capture: every icon in the bar asks
+     * here, and a display read per icon is what scrolling would then cost.
      */
     public static Integer navInkBackdrop() {
-        if (sNavBarColour != null) {
-            return sNavBarColour;
-        }
-        View bar = bar(sNavBarView);
-        return bar == null ? null : edgeColour(bar, false);
+        return sNavInkBackdrop;
+    }
+
+    /** The configuration changed, so the bars have to be decided again for the app already in front. */
+    public static void onPrefsChanged() {
+        apply();
     }
 
     /** The nav bar view, so the icon hook can read the views inside it rather than wait to be called. */

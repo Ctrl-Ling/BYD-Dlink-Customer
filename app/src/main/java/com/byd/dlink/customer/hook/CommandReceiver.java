@@ -19,6 +19,7 @@ public class CommandReceiver {
     private static final String ACTION_SPLIT_SCREEN = "com.byd.dlink.customer.SPLIT_SCREEN";
     private static final String ACTION_AUDIO_PROBE = "com.byd.dlink.customer.AUDIO_PROBE";
     private static final String ACTION_VIEW_TREE = "com.byd.dlink.customer.VIEW_TREE";
+    private static final String ACTION_PREFS_CHANGED = "com.byd.dlink.customer.PREFS_CHANGED";
     private static boolean sRegistered = false;
 
     public static void init(XC_LoadPackage.LoadPackageParam lpparam) {
@@ -82,6 +83,7 @@ public class CommandReceiver {
             IntentFilter filter = new IntentFilter(ACTION_SPLIT_SCREEN);
             filter.addAction(ACTION_AUDIO_PROBE);
             filter.addAction(ACTION_VIEW_TREE);
+            filter.addAction(ACTION_PREFS_CHANGED);
             context.registerReceiver(new CommandBroadcastReceiver(), filter);
             sRegistered = true;
             XposedBridge.log("BYD Dlink Customer: command receiver registered");
@@ -96,6 +98,10 @@ public class CommandReceiver {
             String action = intent.getAction();
             if (ACTION_VIEW_TREE.equals(action)) {
                 ViewTreeDump.request();
+                return;
+            }
+            if (ACTION_PREFS_CHANGED.equals(action)) {
+                SystemBarBackgroundHook.onPrefsChanged();
                 return;
             }
             if (ACTION_AUDIO_PROBE.equals(action)) {
