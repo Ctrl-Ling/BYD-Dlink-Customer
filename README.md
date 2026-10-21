@@ -27,7 +27,7 @@ An Xposed module for BYD automotive Dlink infotainment system, providing extensi
 - **Per-App Volume**: Individual volume percentage for each app
 - **Master Volume**: Global volume multiplier (effective = master% × app%)
 - **Channel Routing**: Redirect app audio to different output channels
-- **Volume Steps**: Adjust step count for each audio stream
+- **Volume Steps**: Adjust step count for each audio stream *(test feature, may not be effective)*
 
 ### 🎯 Icon Color Adaptation
 - **Smart Contrast**: Navigation bar icons automatically adjust contrast against background
@@ -152,7 +152,7 @@ This module modifies system behavior. Use at your own risk. The author is not re
 - **单应用音量**: 每个应用独立的音量百分比
 - **总音量控制**: 全局音量倍数（实际输出 = 总音量% × 应用%）
 - **声道切换**: 将应用音频重定向到不同输出声道
-- **音量阶数**: 调整每个音频流的步进数量
+- **音量阶数**: 调整每个音频流的步进数量 *（测试功能，不一定有效）*
 
 ### 🎯 图标颜色适配
 - **智能对比**: 导航栏图标根据背景自动调整对比度
