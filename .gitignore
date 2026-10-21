@@ -64,9 +64,16 @@ lint/lint-results.html
 # Android Profiling
 *.hprof
 
-# Scratch files
+# Scratch and decompile files
 .scratch/
 dexprobe/
+*.dexdump
+*.bak
+*.old
+*.tmp
+
+# Log files
+*.log
 
 # OS files
 .DS_Store
