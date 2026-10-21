@@ -308,12 +308,12 @@ public class BarIconColourHook {
                 }
             }
         } else if (view instanceof ImageView) {
-            // Icons inside buttons with distinct backgrounds (e.g. the rightmost app-list button)
-            // still need their icon colour adjusted — only the button background is BYD's design.
-            int current = inkOf((ImageView) view);
-            Integer ink = betterInk(current, band, target);
-            if (ink != null) {
-                ((ImageView) view).setColorFilter(ink);
+            if (!hasOwnOrParentBackground(view)) {
+                int current = inkOf((ImageView) view);
+                Integer ink = betterInk(current, band, target);
+                if (ink != null) {
+                    ((ImageView) view).setColorFilter(ink);
+                }
             }
         }
         if (view instanceof ViewGroup) {
