@@ -42,3 +42,17 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.11.0'
 }
+
+android.applicationVariants.all { variant ->
+    variant.outputs.all { output ->
+        variant.assembleProvider.get().doLast {
+            def outputDir = file("${rootProject.projectDir}/build/${variant.name}")
+            outputDir.mkdirs()
+            copy {
+                from output.outputFile
+                into outputDir
+                rename { "app-${variant.name}.apk" }
+            }
+        }
+    }
+}

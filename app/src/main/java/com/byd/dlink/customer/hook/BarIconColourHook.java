@@ -273,7 +273,7 @@ public class BarIconColourHook {
             giveIconItsTone(view, target);
         }
         if (view instanceof TextView) {
-            if (!hasParentWithOwnBackground(view)) {
+            if (!hasOwnOrParentBackground(view)) {
                 ColorStateList colours = ((TextView) view).getTextColors();
                 int current = colours == null ? 0 : colours.getDefaultColor();
                 Integer ink = betterInk(current, band, target);
@@ -284,7 +284,7 @@ public class BarIconColourHook {
                 }
             }
         } else if (view instanceof ImageView) {
-            if (!hasParentWithOwnBackground(view)) {
+            if (!hasOwnOrParentBackground(view)) {
                 int current = inkOf((ImageView) view);
                 Integer ink = betterInk(current, band, target);
                 if (ink != null) {
@@ -303,29 +303,30 @@ public class BarIconColourHook {
     }
 
     /**
-     * Whether any ancestor of the view carries its own background that should be left alone.
+     * Whether the view or any of its ancestors carries a background that should be left alone.
      * A nav item with a distinct background (the rightmost app-list button, for example) is BYD's
-     * own design and its children must not be recoloured by the band contrast logic.
+     * own design and must not be recoloured by the band contrast logic.
      */
-    private static boolean hasParentWithOwnBackground(View view) {
+    private static boolean hasOwnOrParentBackground(View view) {
+        android.graphics.drawable.Drawable bg = view.getBackground();
+        if (bg != null && !isInkBackground(bg)) {
+            return true;
+        }
         for (ViewParent parent = view.getParent(); parent instanceof View; parent = ((View) parent).getParent()) {
             View parentView = (View) parent;
-            android.graphics.drawable.Drawable bg = parentView.getBackground();
-            if (bg == null) {
-                continue;
-            }
-            if (bg instanceof android.graphics.drawable.ColorDrawable) {
-                int colour = ((android.graphics.drawable.ColorDrawable) bg).getColor();
-                if (Color.alpha(colour) > 0x40 && !isInk(colour)) {
-                    XposedBridge.log(TAG + ": hasParentWithOwnBackground found ColorDrawable="
-                            + Integer.toHexString(colour) + " on " + parentView.getClass().getSimpleName());
-                    return true;
-                }
-            } else {
-                XposedBridge.log(TAG + ": hasParentWithOwnBackground found " + bg.getClass().getSimpleName()
-                        + " on " + parentView.getClass().getSimpleName());
+            android.graphics.drawable.Drawable parentBg = parentView.getBackground();
+            if (parentBg != null && !isInkBackground(parentBg)) {
                 return true;
             }
+        }
+        return false;
+    }
+
+    /** @return whether the drawable is an ink-coloured background we're allowed to recolor over. */
+    private static boolean isInkBackground(android.graphics.drawable.Drawable drawable) {
+        if (drawable instanceof android.graphics.drawable.ColorDrawable) {
+            int colour = ((android.graphics.drawable.ColorDrawable) drawable).getColor();
+            return Color.alpha(colour) <= 0x40 || isInk(colour);
         }
         return false;
     }
