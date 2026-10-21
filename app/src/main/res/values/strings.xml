@@ -118,4 +118,12 @@
     <string name="copy_command">复制命令</string>
     <string name="command_copied">命令已复制到剪贴板</string>
     <string name="version_info">版本 %s</string>
+
+    <!-- OTA Update Control -->
+    <string name="ota_title">OTA 更新控制</string>
+    <string name="ota_reboot_intercept_title">拦截更新后自动重启</string>
+    <string name="ota_reboot_intercept_summary">系统更新安装完成后不自动重启，弹窗询问是否重启。适用于 A/B 分区设备，用户可自行决定何时切换槽位重启。</string>
+    <string name="ota_update_disable_title">禁用系统更新</string>
+    <string name="ota_update_disable_summary">完全阻止系统更新的检查和下载。开启后将无法接收新的系统更新。</string>
+    <string name="ota_ab_partition_info">本设备为 A/B 分区设计，更新后需重启以切换到新槽位。</string>
 </resources>

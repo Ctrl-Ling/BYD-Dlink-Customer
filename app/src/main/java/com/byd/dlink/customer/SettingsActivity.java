@@ -74,7 +74,8 @@ public class SettingsActivity extends AppCompatActivity {
     private static final int PAGE_BARS = 2;
     private static final int PAGE_VOLUME = 3;
     private static final int PAGE_APP_AUDIO = 4;
-    private static final int PAGE_COUNT = 5;
+    private static final int PAGE_OTA = 5;
+    private static final int PAGE_COUNT = 6;
 
     private Properties config;
 
@@ -98,14 +99,16 @@ public class SettingsActivity extends AppCompatActivity {
     private View appGainMasterRow;
     private TextView appGainMasterText;
     private View appGainMasterHint;
-    private View appGainDivider;
-    private LinearLayout appGainList;
-    private View addAppButton;
-    private final List<AppGainControl> appGainControls = new ArrayList<>();
     private SwitchCompat appChannelSwitch;
     private View appChannelMasterRow;
     private TextView appChannelMasterText;
     private View appChannelMasterHint;
+    private View appGainDivider;
+    private SwitchCompat otaRebootSwitch;
+    private SwitchCompat otaDisableSwitch;
+    private LinearLayout appGainList;
+    private View addAppButton;
+    private final List<AppGainControl> appGainControls = new ArrayList<>();
     private SeekBar landscapeSeekBar;
     private SeekBar portraitSeekBar;
     private TextView landscapeValue;
@@ -130,6 +133,7 @@ public class SettingsActivity extends AppCompatActivity {
         setupVolume();
         setupAppGain();
         setupAppChannel();
+        setupOta();
         setupSeekBars();
         setupShellCommand();
         showPage(PAGE_HOME);
@@ -155,6 +159,7 @@ public class SettingsActivity extends AppCompatActivity {
         pages[PAGE_BARS] = findViewById(R.id.pageBars);
         pages[PAGE_VOLUME] = findViewById(R.id.pageVolume);
         pages[PAGE_APP_AUDIO] = findViewById(R.id.pageAppAudio);
+        pages[PAGE_OTA] = findViewById(R.id.pageOta);
         globalSwitch = findViewById(R.id.globalSwitch);
         splitScreenSwitch = findViewById(R.id.splitScreenSwitch);
         splitBlacklistSwitch = findViewById(R.id.splitBlacklistSwitch);
@@ -215,6 +220,8 @@ public class SettingsActivity extends AppCompatActivity {
         appChannelMasterRow = findViewById(R.id.appChannelMasterRow);
         appChannelMasterText = findViewById(R.id.appChannelMasterText);
         appChannelMasterHint = findViewById(R.id.appChannelMasterHint);
+        otaRebootSwitch = findViewById(R.id.otaRebootSwitch);
+        otaDisableSwitch = findViewById(R.id.otaDisableSwitch);
     }
 
     /**
@@ -232,6 +239,8 @@ public class SettingsActivity extends AppCompatActivity {
                 v -> showPage(PAGE_VOLUME));
         addFeatureEntry(list, PAGE_APP_AUDIO, R.string.app_gain_title,
                 v -> showPage(PAGE_APP_AUDIO));
+        addFeatureEntry(list, PAGE_OTA, R.string.ota_title,
+                v -> showPage(PAGE_OTA));
     }
 
     private void addFeatureEntry(LinearLayout parent, final int index, int titleRes,
@@ -295,6 +304,8 @@ public class SettingsActivity extends AppCompatActivity {
                 return R.string.volume_title;
             case PAGE_APP_AUDIO:
                 return R.string.app_gain_title;
+            case PAGE_OTA:
+                return R.string.ota_title;
             default:
                 return R.string.app_name;
         }
@@ -346,6 +357,25 @@ public class SettingsActivity extends AppCompatActivity {
                 appGainControls.size(), configured);
         entrySummaries[PAGE_APP_AUDIO].setText(appChannelSwitch.isChecked()
                 ? getString(R.string.entry_app_channel_format, summary) : summary);
+
+        // OTA page summary
+        boolean otaReboot = otaRebootSwitch != null && otaRebootSwitch.isChecked();
+        boolean otaDisable = otaDisableSwitch != null && otaDisableSwitch.isChecked();
+        if (otaReboot || otaDisable) {
+            StringBuilder otaSummary = new StringBuilder();
+            if (otaReboot) {
+                otaSummary.append(getString(R.string.ota_reboot_intercept_title));
+            }
+            if (otaDisable) {
+                if (otaSummary.length() > 0) {
+                    otaSummary.append(", ");
+                }
+                otaSummary.append(getString(R.string.ota_update_disable_title));
+            }
+            entrySummaries[PAGE_OTA].setText(otaSummary.toString());
+        } else {
+            entrySummaries[PAGE_OTA].setText(R.string.entry_state_off);
+        }
     }
 
     private String barSummary() {
@@ -779,6 +809,28 @@ public class SettingsActivity extends AppCompatActivity {
                 getString(R.string.app_channel_master_title), true));
         // Rows were built with this switch still unread, so their channel suffix needs a pass.
         updateAppGainRows();
+    }
+
+    /**
+     * OTA update control: intercept reboot after install, and optionally disable updates entirely.
+     * A/B slot devices switch slots on reboot, so the user decides when that happens.
+     */
+    private void setupOta() {
+        otaRebootSwitch.setChecked(
+                "true".equals(config.getProperty(PrefsManager.KEY_OTA_REBOOT_INTERCEPT, "false")));
+        otaRebootSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            config.setProperty(PrefsManager.KEY_OTA_REBOOT_INTERCEPT, String.valueOf(isChecked));
+            saveConfig();
+            updateEntrySummaries();
+        });
+
+        otaDisableSwitch.setChecked(
+                "true".equals(config.getProperty(PrefsManager.KEY_OTA_UPDATE_DISABLED, "false")));
+        otaDisableSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            config.setProperty(PrefsManager.KEY_OTA_UPDATE_DISABLED, String.valueOf(isChecked));
+            saveConfig();
+            updateEntrySummaries();
+        });
     }
 
     /**

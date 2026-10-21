@@ -14,6 +14,8 @@ public class MainHook implements IXposedHookLoadPackage {
     private static final String SYSTEM_UI_PACKAGE = "com.android.systemui";
     private static final String SYSTEM_SERVER_PACKAGE = "android";
     private static final String MODULE_PACKAGE = "com.byd.dlink.customer";
+    private static final String OTA_UPDATE_PACKAGE = "com.byd.otaupdate";
+    private static final String UPDATED_PACKAGE = "com.byd.updated";
 
     @Override
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
@@ -44,12 +46,27 @@ public class MainHook implements IXposedHookLoadPackage {
                     + " portrait=" + PrefsManager.getPortraitRatio()
                     + " statusBar=" + PrefsManager.getStatusBarHeightOverride()
                     + " navBar=" + PrefsManager.getNavigationBarHeightOverride()
-                    + " volume=" + PrefsManager.isVolumeHookEnabled());
+                    + " volume=" + PrefsManager.isVolumeHookEnabled()
+                    + " otaReboot=" + PrefsManager.isOtaRebootInterceptEnabled()
+                    + " otaDisable=" + PrefsManager.isOtaUpdateDisabled());
             AppBlacklistHook.initSystemServer(lpparam);
             SystemBarHeightHook.init(lpparam);
             VolumeStepHook.init(lpparam);
             if (PrefsManager.isVolumeHookEnabled()) {
                 NaviVolumeChannel.init(lpparam);
+            }
+            // Hook PowerManager.reboot() in system_server for OTA reboot intercept
+            if (PrefsManager.isOtaRebootInterceptEnabled()) {
+                OtaRebootHook.init(lpparam);
+            }
+            return;
+        }
+
+        // Hook OTA update packages
+        if (lpparam.packageName.equals(OTA_UPDATE_PACKAGE) || lpparam.packageName.equals(UPDATED_PACKAGE)) {
+            if (PrefsManager.isOtaRebootInterceptEnabled() || PrefsManager.isOtaUpdateDisabled()) {
+                XposedBridge.log("BYD Dlink Customer: hooking OTA package " + lpparam.packageName);
+                OtaRebootHook.init(lpparam);
             }
             return;
         }

@@ -28,6 +28,8 @@ public class PrefsManager {
     public static final String KEY_LANDSCAPE_RATIO = "landscape_ratio";
     public static final String KEY_PORTRAIT_RATIO = "portrait_ratio";
     public static final String KEY_VOLUME_HOOK_ENABLED = "volume_step_enabled";
+    public static final String KEY_OTA_REBOOT_INTERCEPT = "ota_reboot_intercept";
+    public static final String KEY_OTA_UPDATE_DISABLED = "ota_update_disabled";
 
     // Per-app output gain: one master percentage the whole car obeys, multiplied by the
     // percentage configured for the playing package. 100 means "as the system plays it".
@@ -89,6 +91,8 @@ public class PrefsManager {
             {KEY_APP_GAIN_MASTER, "persist.byd.dlink.master_gain"},
             {KEY_APP_CHANNEL_ENABLED, "persist.byd.dlink.appch_on"},
             {KEY_APP_CHANNEL_MASTER, "persist.byd.dlink.master_ch"},
+            {KEY_OTA_REBOOT_INTERCEPT, "persist.byd.dlink.ota_reboot"},
+            {KEY_OTA_UPDATE_DISABLED, "persist.byd.dlink.ota_disabled"},
     };
 
     private static volatile boolean sPropChannelLogged = false;
@@ -288,6 +292,14 @@ public class PrefsManager {
 
     public static boolean isVolumeHookEnabled() {
         return isGlobalEnabled() && getBool(KEY_VOLUME_HOOK_ENABLED);
+    }
+
+    public static boolean isOtaRebootInterceptEnabled() {
+        return getBool(KEY_OTA_REBOOT_INTERCEPT);
+    }
+
+    public static boolean isOtaUpdateDisabled() {
+        return getBool(KEY_OTA_UPDATE_DISABLED);
     }
 
     /** The step count configured for one audio stream, or STEPS_UNSET when it should be left alone. */
