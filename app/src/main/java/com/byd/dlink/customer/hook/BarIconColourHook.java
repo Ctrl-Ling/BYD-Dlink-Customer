@@ -269,6 +269,9 @@ public class BarIconColourHook {
     }
 
     private static void pullInk(View view, int band, int target) {
+        if (hasOwnBackground(view)) {
+            return;
+        }
         if (sBaseItem != null && sBaseItem.isInstance(view)) {
             giveIconItsTone(view, target);
         }
@@ -292,6 +295,23 @@ public class BarIconColourHook {
                 pullInk(group.getChildAt(i), band, target);
             }
         }
+    }
+
+    /**
+     * Whether the view carries its own background that should be left alone. A nav item with a
+     * distinct background (the rightmost app-list button, for example) is BYD's own design and must
+     * not be recoloured by the band contrast logic.
+     */
+    private static boolean hasOwnBackground(View view) {
+        android.graphics.drawable.Drawable bg = view.getBackground();
+        if (bg == null) {
+            return false;
+        }
+        if (bg instanceof android.graphics.drawable.ColorDrawable) {
+            int colour = ((android.graphics.drawable.ColorDrawable) bg).getColor();
+            return Color.alpha(colour) > 0x40 && !isInk(colour);
+        }
+        return true;
     }
 
     /** @return the colour to draw with instead of {@code current}, or null if {@code current} reads better. */
