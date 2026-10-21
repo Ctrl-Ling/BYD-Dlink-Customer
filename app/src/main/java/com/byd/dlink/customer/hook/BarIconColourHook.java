@@ -278,6 +278,8 @@ public class BarIconColourHook {
                 int current = colours == null ? 0 : colours.getDefaultColor();
                 Integer ink = betterInk(current, band, target);
                 if (ink != null) {
+                    XposedBridge.log(TAG + ": pullInk TextView " + view.getClass().getSimpleName()
+                            + " current=" + Integer.toHexString(current) + " -> " + Integer.toHexString(ink));
                     ((TextView) view).setTextColor(ink);
                 }
             }
@@ -286,6 +288,8 @@ public class BarIconColourHook {
                 int current = inkOf((ImageView) view);
                 Integer ink = betterInk(current, band, target);
                 if (ink != null) {
+                    XposedBridge.log(TAG + ": pullInk ImageView " + view.getClass().getSimpleName()
+                            + " current=" + Integer.toHexString(current) + " -> " + Integer.toHexString(ink));
                     ((ImageView) view).setColorFilter(ink);
                 }
             }
@@ -305,16 +309,21 @@ public class BarIconColourHook {
      */
     private static boolean hasParentWithOwnBackground(View view) {
         for (ViewParent parent = view.getParent(); parent instanceof View; parent = ((View) parent).getParent()) {
-            android.graphics.drawable.Drawable bg = ((View) parent).getBackground();
+            View parentView = (View) parent;
+            android.graphics.drawable.Drawable bg = parentView.getBackground();
             if (bg == null) {
                 continue;
             }
             if (bg instanceof android.graphics.drawable.ColorDrawable) {
                 int colour = ((android.graphics.drawable.ColorDrawable) bg).getColor();
                 if (Color.alpha(colour) > 0x40 && !isInk(colour)) {
+                    XposedBridge.log(TAG + ": hasParentWithOwnBackground found ColorDrawable="
+                            + Integer.toHexString(colour) + " on " + parentView.getClass().getSimpleName());
                     return true;
                 }
             } else {
+                XposedBridge.log(TAG + ": hasParentWithOwnBackground found " + bg.getClass().getSimpleName()
+                        + " on " + parentView.getClass().getSimpleName());
                 return true;
             }
         }
