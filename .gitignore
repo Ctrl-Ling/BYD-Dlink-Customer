@@ -73,6 +73,9 @@ dexprobe/
 *.old
 *.tmp
 
+# Magisk modules
+magisk_module/
+
 # Log files
 *.log
 

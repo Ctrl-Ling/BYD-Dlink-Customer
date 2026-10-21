@@ -69,7 +69,7 @@
     <string name="volume_reboot_message">%1$s set to %2$d steps. Reboot the device to apply.</string>
     <string name="app_gain_title">Per-App Volume</string>
     <string name="app_gain_switch_title">Per-App Volume Hook</string>
-    <string name="app_gain_switch_summary">Output = Master% × App%. No reboot needed, takes effect on next playback. Only applies to apps in the list below, which must also be checked in LSPosed scope.</string>
+    <string name="app_gain_switch_summary">Output = Master%% × App%%. No reboot needed, takes effect on next playback. Only applies to apps in the list below, which must also be checked in LSPosed scope.</string>
     <string name="app_gain_master_title">Master Volume</string>
     <string name="app_gain_master_format">%d%%</string>
     <string name="app_gain_picker_hint">Range %1$d ~ %2$d%%. 100%% is original volume, 0%% mutes the app.</string>
@@ -92,7 +92,7 @@
     <string name="app_channel_master_hint">Apps without individual channel settings use this master channel. Apps with individual settings follow their own settings, including those set to "No Change". Default is No Change.</string>
     <string name="app_channel_master_applied_format">Master Channel → %1$s, takes effect on next playback for apps without individual settings</string>
     <string name="app_channel_master_cleared">Master channel set to No Change, apps return to their own channels</string>
-    <string name="app_gain_master_hint">Output = Master Volume% × App Volume%.</string>
+    <string name="app_gain_master_hint">Output = Master Volume%% × App Volume%%.</string>
     <string name="app_add_button">Add App</string>
     <string name="app_picker_title">Select App</string>
     <string name="app_picker_search_hint">Search app name</string>
