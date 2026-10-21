@@ -85,13 +85,15 @@ public class SettingsActivity extends AppCompatActivity {
 
     // What the last save actually put on the device, so a second save asked for the same thing writes
     // nothing at all: a root shell, a file copy and a SystemUI re-decision per no-op was what one tap
-    // of a mutually exclusive switch cost twice over.
-    private Properties saved;
+    // of a mutually exclusive switch cost twice over. Only ever set from a write that reported success,
+    // so a lost write leaves the next save free to retry the same values.
+    private volatile Properties saved;
 
     // One thread, so the writes land in the order they were asked for -- a later save whose temp file
     // has already been overtaken would otherwise move the newer file into place and then fail its own
-    // mv, taking its setprops down the && chain with it.
-    private final ExecutorService configWriter = Executors.newSingleThreadExecutor();
+    // mv, taking its setprops down the && chain with it. Static because a page closing must not take
+    // the writer with it: the last change made before leaving would then be refused and lost.
+    private static final ExecutorService configWriter = Executors.newSingleThreadExecutor();
 
     private ScrollView settingsScroll;
     private MaterialToolbar toolbar;
@@ -165,13 +167,6 @@ public class SettingsActivity extends AppCompatActivity {
         Log.d("BYD Dlink Customer", "onResume triggered");
         updateModuleStatus();
         Log.d("BYD Dlink Customer", "isModuleActivated result: " + isModuleActivated());
-    }
-
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        // Lets a save already queued land on the device, then retires the writer with the screen.
-        configWriter.shutdown();
     }
 
     private void initViews() {
@@ -1118,17 +1113,11 @@ public class SettingsActivity extends AppCompatActivity {
         value.setPadding(dp(12), dp(6), dp(12), dp(6));
         value.setVisibility(appGainSwitch.isChecked() ? View.VISIBLE : View.GONE);
 
-        MaterialButton stop = new MaterialButton(this);
-        stop.setText(R.string.app_force_stop);
-        stop.setAllCaps(false);
-        stop.setTextSize(12f);
-        stop.setMinWidth(0);
-        stop.setMinHeight(dp(36));
-        stop.setInsetTop(0);
-        stop.setInsetBottom(0);
-        stop.setPadding(dp(10), dp(6), dp(10), dp(6));
-        final String stoppedLabel = label;
-        stop.setOnClickListener(v -> forceStop(packageName, stoppedLabel));
+        MaterialButton stop = rowButton(R.string.app_force_stop);
+        stop.setOnClickListener(v -> forceStop(packageName, label));
+
+        MaterialButton remove = rowButton(R.string.app_remove);
+        remove.setOnClickListener(v -> removeFromList(packageName, label));
 
         LinearLayout texts = new LinearLayout(this);
         texts.setOrientation(LinearLayout.VERTICAL);
@@ -1154,11 +1143,46 @@ public class SettingsActivity extends AppCompatActivity {
                         LinearLayout.LayoutParams.WRAP_CONTENT);
         stopParams.leftMargin = dp(8);
         row.addView(stop, stopParams);
+        LinearLayout.LayoutParams removeParams =
+                new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+        removeParams.leftMargin = dp(6);
+        row.addView(remove, removeParams);
         appGainList.addView(row, rowParams);
 
         final AppGainControl control = new AppGainControl(packageName, label, name, value);
         row.setOnClickListener(v -> showAppAudioDialog(control));
         appGainControls.add(control);
+    }
+
+    /** The small action button at the end of an app row. */
+    private MaterialButton rowButton(int textRes) {
+        MaterialButton button = new MaterialButton(this);
+        button.setText(textRes);
+        button.setAllCaps(false);
+        button.setTextSize(12f);
+        button.setMinWidth(0);
+        button.setMinHeight(dp(36));
+        button.setInsetTop(0);
+        button.setInsetBottom(0);
+        button.setPadding(dp(10), dp(6), dp(10), dp(6));
+        return button;
+    }
+
+    /**
+     * Take an app off the hook list. Membership is what the injected code obeys, so this is the whole
+     * un-configuration: the app's own gain and channel values stay behind, which is what lets adding it
+     * back restore the setting rather than start over.
+     */
+    private void removeFromList(String packageName, String label) {
+        Set<String> packages = addedPackages();
+        if (!packages.remove(packageName)) {
+            return;
+        }
+        rebuildAppRows(packages);
+        updateAppGainRows();
+        Toast.makeText(this, getString(R.string.app_removed_format, label),
+                Toast.LENGTH_SHORT).show();
     }
 
     /**
@@ -1864,7 +1888,6 @@ public class SettingsActivity extends AppCompatActivity {
                 }
             }
             final String shell = cmd.toString();
-            saved = toWrite;
             // Writing the file and forking a root shell are disk work with no business on the UI
             // thread, and one thread keeps them arriving in the order they were asked for.
             configWriter.execute(new Runnable() {
@@ -1874,9 +1897,24 @@ public class SettingsActivity extends AppCompatActivity {
                         try (FileWriter writer = new FileWriter(tempFile)) {
                             toWrite.store(writer, null);
                         }
-                        Runtime.getRuntime().exec(new String[]{"su", "-c", shell}).waitFor();
+                        Process process = Runtime.getRuntime().exec(new String[]{"su", "-c", shell});
+                        java.io.InputStream err = process.getErrorStream();
+                        StringBuilder output = new StringBuilder();
+                        byte[] buf = new byte[512];
+                        int read;
+                        while ((read = err.read(buf)) > 0) {
+                            output.append(new String(buf, 0, read));
+                        }
+                        int exit = process.waitFor();
+                        if (exit != 0) {
+                            Log.e("BYD Dlink Customer",
+                                    "config write failed, exit=" + exit + " " + output);
+                            return;
+                        }
+                        saved = toWrite;
                     } catch (Throwable t) {
                         Log.e("BYD Dlink Customer", "config write failed", t);
+                        return;
                     }
                     // SystemUI decides the bars once per window now rather than on every layout pass,
                     // so a change made here has to be announced or it would not show until the next

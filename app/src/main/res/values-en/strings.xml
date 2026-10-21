@@ -105,6 +105,8 @@
     <string name="app_force_stop">Force Stop</string>
     <string name="app_force_stop_done_format">Force stopped %1$s</string>
     <string name="app_force_stop_failed">Force stop failed, root access required</string>
+    <string name="app_remove">Remove</string>
+    <string name="app_removed_format">Removed %1$s; it is no longer configured</string>
     <string name="landscape_ratio">Landscape Split Ratio</string>
     <string name="portrait_ratio">Portrait Split Ratio</string>
     <string name="ratio_format">%d%%</string>
