@@ -61,7 +61,7 @@
     <string name="bar_immersive_tag">·含沉浸</string>
     <string name="volume_title">音量阶数调整</string>
     <string name="volume_switch_title">音量阶数 Hook</string>
-    <string name="volume_switch_summary">打开后逐个音量选择阶数，保存并重启车机后生效</string>
+    <string name="volume_switch_summary">打开后逐个音量选择阶数，保存并重启车机后生效（测试功能，不一定有效）</string>
     <string name="volume_steps_value_format">当前 %1$d 阶 · 已设为 %2$d 阶</string>
     <string name="volume_steps_current_format">%1$d 阶</string>
     <string name="volume_steps_picker_hint">可设置范围 %1$d ~ %2$d 阶</string>
