@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Split screen icon -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,30h20v48H30z" />
+    <path
+        android:fillColor="#BBDEFB"
+        android:pathData="M54,30h24v48H54z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M26,26h56v4H26z"
+        android:strokeWidth="0" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M26,78h56v4H26z"
+        android:strokeWidth="0" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M26,26h4v56H26z"
+        android:strokeWidth="0" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M78,26h4v56H78z"
+        android:strokeWidth="0" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M51,30h2v48H51z" />
+</vector>

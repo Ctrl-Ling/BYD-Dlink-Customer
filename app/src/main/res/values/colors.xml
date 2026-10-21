@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="colorPrimary">#1565C0</color>
+    <color name="colorPrimaryDark">#0D47A1</color>
+    <color name="colorAccent">#2196F3</color>
+    <color name="colorActive">#4CAF50</color>
+    <color name="colorInactive">#F44336</color>
+    <color name="colorBackground">#F5F5F5</color>
+    <color name="colorCard">#FFFFFF</color>
+    <color name="colorTextPrimary">#212121</color>
+    <color name="colorTextSecondary">#757575</color>
+    <color name="colorDivider">#BDBDBD</color>
+    <!-- Every tappable thing in this screen is drawn with this pair, because a card has no borders
+         of its own and a clickable number otherwise reads as a label. -->
+    <color name="colorButtonFace">#E8F1FA</color>
+    <color name="colorButtonStroke">#1565C0</color>
+</resources>
