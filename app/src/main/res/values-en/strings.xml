@@ -122,7 +122,7 @@
     <!-- OTA Update Control -->
     <string name="ota_title">OTA Update Control</string>
     <string name="ota_reboot_intercept_title">Intercept Auto-Reboot After Update</string>
-    <string name="ota_reboot_intercept_summary">After system update installation, do not auto-reboot. Show a dialog asking whether to reboot. For A/B partition devices, user decides when to switch slots and reboot.</string>
+    <string name="ota_reboot_intercept_summary">After system update installation, do not auto-reboot. Show a dialog asking whether to reboot. For A/B partition devices, user decides when to switch slots and reboot.\n\nRequires system reboot to take effect (hooks system-level service).</string>
     <string name="ota_update_disable_title">Disable System Updates</string>
     <string name="ota_update_disable_summary">Completely block system update checks and downloads. Once enabled, no new system updates will be received.</string>
     <string name="ota_ab_partition_info">This device uses A/B partition design. A reboot is required after update to switch to the new slot.</string>
