@@ -38,8 +38,8 @@ An Xposed module for BYD automotive Dlink infotainment system, providing extensi
 ### Settings Interface
 ![Settings Home](screenshots/settings_home.png)
 
-### Bar Color Customization
-![Bar Color Settings](screenshots/settings_bar_color.png)
+### Split-Screen Feature
+![Split Screen](screenshots/split_screen.png)
 
 ### Main Interface
 ![Main Interface](screenshots/main_interface.png)
@@ -156,8 +156,8 @@ This module modifies system behavior. Use at your own risk. The author is not re
 ### 设置界面
 ![设置主页](screenshots/settings_home.png)
 
-### 栏颜色设置
-![栏颜色设置](screenshots/settings_bar_color.png)
+### 分屏功能
+![分屏效果](screenshots/split_screen.png)
 
 ### 主界面效果
 ![主界面](screenshots/main_interface.png)
