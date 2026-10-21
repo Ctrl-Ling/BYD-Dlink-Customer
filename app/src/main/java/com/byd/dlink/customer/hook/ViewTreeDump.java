@@ -46,6 +46,8 @@ public class ViewTreeDump {
             List<?> roots = (List<?>) XposedHelpers.getObjectField(global, "mRoots");
             List<?> params = (List<?>) XposedHelpers.getObjectField(global, "mParams");
             sLines = 0;
+            XposedBridge.log(TAG + ": painted navBand=" + hex(SystemBarBackgroundHook.navBarColour())
+                    + " statusBand=" + hex(SystemBarBackgroundHook.statusBarColour()));
             for (int i = 0; i < views.size(); i++) {
                 View view = (View) views.get(i);
                 Object root = roots.get(i);
@@ -127,7 +129,10 @@ public class ViewTreeDump {
                 .append(" vis=").append(view.getVisibility())
                 .append(" alpha=").append(view.getAlpha())
                 .append(" layer=").append(view.getLayerType())
-                .append(" bg=").append(backgroundOf(view));
+                .append(" bg=").append(backgroundOf(view))
+                .append(" ink=").append(inkOf(view))
+                .append(" drw=").append(drawableOf(view))
+                .append(" app=").append(originalAppIconOf(view));
         Object params = view.getLayoutParams();
         if (params instanceof ViewGroup.MarginLayoutParams) {
             ViewGroup.MarginLayoutParams m = (ViewGroup.MarginLayoutParams) params;
@@ -152,6 +157,45 @@ public class ViewTreeDump {
         }
     }
 
+    private static String drawableOf(View view) {
+        if (!(view instanceof android.widget.ImageView)) {
+            return "-";
+        }
+        Drawable drawable = ((android.widget.ImageView) view).getDrawable();
+        if (drawable == null) {
+            return "-";
+        }
+        String name = drawable.getClass().getSimpleName()
+                + ":op" + drawable.getOpacity()
+                + ':' + drawable.getIntrinsicWidth() + 'x' + drawable.getIntrinsicHeight();
+        if (drawable instanceof android.graphics.drawable.BitmapDrawable) {
+            android.graphics.Bitmap bitmap =
+                    ((android.graphics.drawable.BitmapDrawable) drawable).getBitmap();
+            if (bitmap != null) {
+                int[] pixels = new int[bitmap.getWidth() * bitmap.getHeight()];
+                bitmap.getPixels(pixels, 0, bitmap.getWidth(), 0, 0,
+                        bitmap.getWidth(), bitmap.getHeight());
+                int opaque = 0;
+                java.util.Set<Integer> colours = new java.util.HashSet<Integer>();
+                for (int i = 0; i < pixels.length; i++) {
+                    int argb = pixels[i];
+                    if ((argb >>> 24) < 0x20) {
+                        continue;
+                    }
+                    opaque++;
+                    colours.add(Integer.valueOf(((argb >> 12) & 0xF00)
+                            | ((argb >> 8) & 0xF0) | ((argb >> 4) & 0xF)));
+                }
+                name = name + " solid=" + (opaque * 100 / pixels.length) + "% cols=" + colours.size();
+            }
+        }
+        return name;
+    }
+
+    private static String hex(Integer colour) {
+        return colour == null ? "none" : Integer.toHexString(colour.intValue());
+    }
+
     private static String backgroundOf(View view) {
         Drawable background = view.getBackground();
         if (background == null) {
@@ -162,6 +206,50 @@ public class ViewTreeDump {
         }
         return background.getClass().getSimpleName() + '@'
                 + Integer.toHexString(background.getAlpha());
+    }
+
+    /** What the icon text or image is actually being drawn with, from either mechanism BYD used. */
+    private static String inkOf(View view) {
+        int colour = 0;
+        if (view instanceof android.widget.TextView) {
+            android.content.res.ColorStateList colours =
+                    ((android.widget.TextView) view).getTextColors();
+            colour = colours == null ? 0 : colours.getDefaultColor();
+        } else if (view instanceof android.widget.ImageView) {
+            android.graphics.ColorFilter filter = ((android.widget.ImageView) view).getColorFilter();
+            for (Class<?> owner = filter == null ? null : filter.getClass();
+                    owner != null; owner = owner.getSuperclass()) {
+                try {
+                    java.lang.reflect.Field field = owner.getDeclaredField("mColor");
+                    field.setAccessible(true);
+                    colour = field.getInt(filter);
+                    break;
+                } catch (Throwable ignored) {
+                }
+            }
+            if (colour == 0) {
+                android.content.res.ColorStateList tint =
+                        ((android.widget.ImageView) view).getImageTintList();
+                colour = tint == null ? 0 : tint.getDefaultColor();
+            }
+        }
+        return colour == 0 ? "-" : Integer.toHexString(colour);
+    }
+
+    /** Whether a nav item is one BYD is deliberately drawing with a real app icon, and what it draws. */
+    private static String originalAppIconOf(View view) {
+        try {
+            Object icon = XposedHelpers.getObjectField(view, "mNaviItemIcon");
+            Drawable drawable = icon instanceof android.widget.ImageView
+                    ? ((android.widget.ImageView) icon).getDrawable() : null;
+            return XposedHelpers.getBooleanField(view, "mUsingOriginalAppIcon")
+                    + "/" + (drawable == null ? "-"
+                            : drawable.getClass().getSimpleName() + " op=" + drawable.getOpacity()
+                                    + " " + drawable.getIntrinsicWidth() + 'x'
+                                    + drawable.getIntrinsicHeight());
+        } catch (Throwable t) {
+            return "-";
+        }
     }
 
     private static String gravityOf(Object params) {

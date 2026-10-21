@@ -2,8 +2,11 @@ package com.byd.dlink.customer.hook;
 
 import android.content.res.ColorStateList;
 import android.content.res.Resources;
+import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.ColorFilter;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.Drawable;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewParent;
@@ -67,6 +70,14 @@ public class BarIconColourHook {
     private static final int MAX_INK_SPREAD = 0x40;
 
     /**
+     * Above this share of its own pixels covered, a bitmap is a picture BYD is showing as artwork --
+     * a filled tile with something drawn inside it -- rather than a glyph whose strokes are the whole
+     * of it. Measured on this ROM: the app-list tile covers 96%, a real app icon 95%, the split-screen
+     * key 13%.
+     */
+    private static final float PICTURE_COVERAGE = 0.5f;
+
+    /**
      * Below this the band is mostly whatever is behind it, and no colour we can name is what the
      * user is looking at -- so the ROM's own day/night signal is left alone.
      */
@@ -97,6 +108,10 @@ public class BarIconColourHook {
     // Cache for hasOwnOrParentBackground() results - view backgrounds rarely change
     private static final Map<View, Boolean> sBackgroundCache =
             Collections.synchronizedMap(new WeakHashMap<View, Boolean>());
+
+    // Cache for isPictureIcon() results - a bitmap's coverage never changes once it is drawn with
+    private static final Map<Drawable, Boolean> sPictureCache =
+            Collections.synchronizedMap(new WeakHashMap<Drawable, Boolean>());
 
     // Cache for inkOf() results - ImageView color filters rarely change
     private static final Map<ImageView, Integer> sInkCache =
@@ -217,6 +232,8 @@ public class BarIconColourHook {
      * Neutral colours only. A saturated one is BYD telling the user something -- the blue of the active
      * nav item, the HI/LO temperature accents -- and a band judgement must not overrule that. The alpha
      * BYD asked with is kept, so a deliberately dimmed icon stays dimmed, only in the right colour.
+     * An ink BYD asks for over a picture icon is refused outright: that call is what flattens the tile
+     * into a blob, and the tile has nothing to gain from the band.
      */
     private static void hookBarInk() {
         XC_MethodHook inkHook = new XC_MethodHook() {
@@ -225,6 +242,10 @@ public class BarIconColourHook {
                 View view = (View) param.thisObject;
                 int requested = ((Integer) param.args[0]).intValue();
                 if (barOf(view) != BAR_NAV || !isInk(requested)) {
+                    return;
+                }
+                if (view instanceof ImageView && isPictureIcon((ImageView) view)) {
+                    param.setResult(null);
                     return;
                 }
                 Integer ink = inkColour(view, BAR_NAV, requested);
@@ -279,15 +300,29 @@ public class BarIconColourHook {
      * its asset carries, which is white. The item's own state says whether that is a decision: an item
      * showing a real app icon is BYD keeping that icon's colours, so it is left alone, and one whose
      * icon carries no colour decision at all is given the tone the band needs.
+     *
+     * BYD's flag only covers the icons it launched from an app, though. The keys it draws from a tile
+     * bitmap of its own -- the app-list badge, for one -- carry their message in their artwork, and a
+     * single ink colour erases it, so they are stood down the same way and handed back whatever BYD
+     * had already flattened them to.
      */
     private static void giveIconItsTone(View item, int target) {
         try {
-            if (XposedHelpers.getBooleanField(item, KEY_ORIGINAL_APP_ICON)) {
+            Object icon = XposedHelpers.getObjectField(item, KEY_ITEM_ICON);
+            if (!(icon instanceof ImageView)
+                    || XposedHelpers.getBooleanField(item, KEY_ORIGINAL_APP_ICON)) {
                 return;
             }
-            Object icon = XposedHelpers.getObjectField(item, KEY_ITEM_ICON);
-            if (icon instanceof ImageView && inkOf((ImageView) icon) == 0) {
-                ((ImageView) icon).setColorFilter(target);
+            ImageView image = (ImageView) icon;
+            if (isPictureIcon(image)) {
+                int current = inkOf(image);
+                if (current != 0 && isInk(current)) {
+                    image.setColorFilter((ColorFilter) null);
+                }
+                return;
+            }
+            if (inkOf(image) == 0) {
+                image.setColorFilter(target);
             }
         } catch (Throwable t) {
             // Not an item that carries these; the walk simply moves on.
@@ -308,11 +343,11 @@ public class BarIconColourHook {
                 }
             }
         } else if (view instanceof ImageView) {
-            if (!hasOwnOrParentBackground(view)) {
-                int current = inkOf((ImageView) view);
-                Integer ink = betterInk(current, band, target);
+            ImageView image = (ImageView) view;
+            if (!isPictureIcon(image) && !hasOwnOrParentBackground(image)) {
+                Integer ink = betterInk(inkOf(image), band, target);
                 if (ink != null) {
-                    ((ImageView) view).setColorFilter(ink);
+                    image.setColorFilter(ink);
                 }
             }
         }
@@ -325,23 +360,56 @@ public class BarIconColourHook {
     }
 
     /**
-     * Whether the view or any of its ancestors carries a background that should be left alone.
-     * A nav item with a distinct background (the rightmost app-list button, for example) is BYD's
-     * own design and must not be recoloured by the band contrast logic.
+     * Whether an image draws from a bitmap that carries the message in its artwork rather than in its
+     * shape -- a filled tile with detail inside it, the way BYD draws the app-list key and every real
+     * app icon. Coverage tells the two apart: a glyph is a few strokes over a transparent field, a
+     * picture is nearly all ink. Flattening the second to one bar colour erases what it depicts, so it
+     * is left to draw itself, the same way an item flagged as showing its original app icon is.
+     */
+    private static boolean isPictureIcon(ImageView image) {
+        Drawable drawable = image.getDrawable();
+        if (!(drawable instanceof BitmapDrawable)) {
+            return false;
+        }
+        Boolean cached = sPictureCache.get(drawable);
+        if (cached != null) {
+            return cached;
+        }
+        boolean picture = false;
+        Bitmap bitmap = ((BitmapDrawable) drawable).getBitmap();
+        if (bitmap != null && !bitmap.isRecycled()) {
+            int[] pixels = new int[bitmap.getWidth() * bitmap.getHeight()];
+            bitmap.getPixels(pixels, 0, bitmap.getWidth(), 0, 0,
+                    bitmap.getWidth(), bitmap.getHeight());
+            int covered = 0;
+            for (int i = 0; i < pixels.length; i++) {
+                if ((pixels[i] >>> 24) >= 0x20) {
+                    covered++;
+                }
+            }
+            picture = covered >= pixels.length * PICTURE_COVERAGE;
+        }
+        sPictureCache.put(drawable, picture);
+        return picture;
+    }
+
+    /**
+     * Whether the view or any of its ancestors carries a background that should be left alone. A view
+     * sitting on a background of its own -- a key drawn on its own plate rather than on the band -- is
+     * BYD's own design and must not be recoloured by the band contrast logic.
      */
     private static boolean hasOwnOrParentBackground(View view) {
         Boolean cached = sBackgroundCache.get(view);
         if (cached != null) {
             return cached;
         }
-        android.graphics.drawable.Drawable bg = view.getBackground();
+        Drawable bg = view.getBackground();
         if (bg != null && !isInkBackground(bg)) {
             sBackgroundCache.put(view, true);
             return true;
         }
         for (ViewParent parent = view.getParent(); parent instanceof View; parent = ((View) parent).getParent()) {
-            View parentView = (View) parent;
-            android.graphics.drawable.Drawable parentBg = parentView.getBackground();
+            Drawable parentBg = ((View) parent).getBackground();
             if (parentBg != null && !isInkBackground(parentBg)) {
                 sBackgroundCache.put(view, true);
                 return true;
