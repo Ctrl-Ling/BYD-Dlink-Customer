@@ -22,6 +22,7 @@ import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.BaseAdapter;
 import android.widget.CheckBox;
+import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -57,6 +58,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class SettingsActivity extends AppCompatActivity {
 
@@ -79,6 +82,16 @@ public class SettingsActivity extends AppCompatActivity {
     private static final int PAGE_COUNT = 6;
 
     private Properties config;
+
+    // What the last save actually put on the device, so a second save asked for the same thing writes
+    // nothing at all: a root shell, a file copy and a SystemUI re-decision per no-op was what one tap
+    // of a mutually exclusive switch cost twice over.
+    private Properties saved;
+
+    // One thread, so the writes land in the order they were asked for -- a later save whose temp file
+    // has already been overtaken would otherwise move the newer file into place and then fail its own
+    // mv, taking its setprops down the && chain with it.
+    private final ExecutorService configWriter = Executors.newSingleThreadExecutor();
 
     private ScrollView settingsScroll;
     private MaterialToolbar toolbar;
@@ -122,6 +135,7 @@ public class SettingsActivity extends AppCompatActivity {
         setContentView(R.layout.activity_settings);
 
         config = loadConfig();
+        saved = copyOf(config);
 
         initViews();
         addFeatureEntries();
@@ -151,6 +165,13 @@ public class SettingsActivity extends AppCompatActivity {
         Log.d("BYD Dlink Customer", "onResume triggered");
         updateModuleStatus();
         Log.d("BYD Dlink Customer", "isModuleActivated result: " + isModuleActivated());
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        // Lets a save already queued land on the device, then retires the writer with the screen.
+        configWriter.shutdown();
     }
 
     private void initViews() {
@@ -558,29 +579,43 @@ public class SettingsActivity extends AppCompatActivity {
             }
         });
         control.valueRow.setOnClickListener(v -> showColorPicker(control));
-        setupBarBgMode(control, control.immersiveToggle, control.immersiveKey,
-                control.autoToggle);
-        setupBarBgMode(control, control.autoToggle, control.autoKey,
-                control.immersiveToggle);
+        setupBarBgModes(control);
         updateBarBackground(control);
     }
 
     /**
-     * A bar paints its configured colour, the edge of the screen, or nothing -- so the two modes
-     * that choose between them can never both be on, and switching one on is what switches the
-     * other off.
+     * A bar paints its configured colour, the edge of the screen, or nothing -- so the two modes that
+     * choose between them can never both be on, and switching one on is what switches the other off.
+     * One listener serves both switches and detaches the other's while forcing it off: two listeners
+     * re-entering each other saved the config twice for a single tap, which is two root shells and two
+     * trips through SystemUI's bar decision for one change.
      */
-    private void setupBarBgMode(BarBackgroundControl control, SwitchCompat toggle, String key,
-                                SwitchCompat other) {
-        toggle.setChecked("true".equals(config.getProperty(key, "false")));
-        toggle.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            config.setProperty(key, String.valueOf(isChecked));
-            if (isChecked && other.isChecked()) {
-                other.setChecked(false);
-            }
-            saveConfig();
-            updateBarBackground(control);
-        });
+    private void setupBarBgModes(final BarBackgroundControl control) {
+        final SwitchCompat immersive = control.immersiveToggle;
+        final SwitchCompat auto = control.autoToggle;
+        immersive.setChecked("true".equals(config.getProperty(control.immersiveKey, "false")));
+        auto.setChecked("true".equals(config.getProperty(control.autoKey, "false")));
+        CompoundButton.OnCheckedChangeListener modeListener =
+                new CompoundButton.OnCheckedChangeListener() {
+                    @Override
+                    public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                        boolean fromAuto = buttonView == auto;
+                        SwitchCompat other = fromAuto ? immersive : auto;
+                        String key = fromAuto ? control.autoKey : control.immersiveKey;
+                        String otherKey = fromAuto ? control.immersiveKey : control.autoKey;
+                        config.setProperty(key, String.valueOf(isChecked));
+                        if (isChecked && other.isChecked()) {
+                            other.setOnCheckedChangeListener(null);
+                            other.setChecked(false);
+                            other.setOnCheckedChangeListener(this);
+                            config.setProperty(otherKey, "false");
+                        }
+                        saveConfig();
+                        updateBarBackground(control);
+                    }
+                };
+        immersive.setOnCheckedChangeListener(modeListener);
+        auto.setOnCheckedChangeListener(modeListener);
     }
 
     private void updateBarBackground(BarBackgroundControl control) {
@@ -1807,35 +1842,41 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     private void saveConfig() {
+        final Properties changed = changesSinceSaved();
+        if (changed.isEmpty()) {
+            return;
+        }
         try {
-            File localFile = new File(getFilesDir(), LOCAL_CONFIG);
-            File tempFile = new File(getFilesDir(), LOCAL_CONFIG + ".tmp");
-            try (FileWriter writer = new FileWriter(tempFile)) {
-                config.store(writer, null);
-            }
+            final File localFile = new File(getFilesDir(), LOCAL_CONFIG);
+            final File tempFile = new File(getFilesDir(), LOCAL_CONFIG + ".tmp");
+            final Properties toWrite = copyOf(config);
             StringBuilder cmd = new StringBuilder();
             cmd.append("mv ").append(tempFile.getAbsolutePath())
                     .append(" ").append(localFile.getAbsolutePath())
                     .append(" && cp ").append(localFile.getAbsolutePath())
                     .append(" ").append(CONFIG_FILE)
                     .append(" && chmod 666 ").append(CONFIG_FILE);
-            for (String key : config.stringPropertyNames()) {
-                String value = config.getProperty(key);
-                String propKey = value == null ? null : PrefsManager.propKeyFor(key);
+            for (String key : changed.stringPropertyNames()) {
+                String propKey = PrefsManager.propKeyFor(key);
                 if (propKey != null) {
-                    cmd.append(" && setprop ").append(propKey).append(' ').append(value);
+                    cmd.append(" && setprop ").append(propKey).append(' ')
+                            .append(changed.getProperty(key));
                 }
             }
-            final Process write = Runtime.getRuntime().exec(new String[]{"su", "-c", cmd.toString()});
-            // The properties have to have landed before SystemUI is told to re-read them, and waiting
-            // for a root shell is no work to do on the UI thread.
-            new Thread(new Runnable() {
+            final String shell = cmd.toString();
+            saved = toWrite;
+            // Writing the file and forking a root shell are disk work with no business on the UI
+            // thread, and one thread keeps them arriving in the order they were asked for.
+            configWriter.execute(new Runnable() {
                 @Override
                 public void run() {
                     try {
-                        write.waitFor();
-                    } catch (InterruptedException t) {
-                        Thread.currentThread().interrupt();
+                        try (FileWriter writer = new FileWriter(tempFile)) {
+                            toWrite.store(writer, null);
+                        }
+                        Runtime.getRuntime().exec(new String[]{"su", "-c", shell}).waitFor();
+                    } catch (Throwable t) {
+                        Log.e("BYD Dlink Customer", "config write failed", t);
                     }
                     // SystemUI decides the bars once per window now rather than on every layout pass,
                     // so a change made here has to be announced or it would not show until the next
@@ -1843,11 +1884,29 @@ public class SettingsActivity extends AppCompatActivity {
                     sendBroadcast(new Intent("com.byd.dlink.customer.PREFS_CHANGED")
                             .setPackage("com.android.systemui"));
                 }
-            }).start();
+            });
             updateEntrySummaries();
         } catch (Throwable t) {
             Log.e("BYD Dlink Customer", "saveConfig error", t);
         }
+    }
+
+    /** The keys whose value is not already what the device was last given. */
+    private Properties changesSinceSaved() {
+        Properties changed = new Properties();
+        for (String key : config.stringPropertyNames()) {
+            String value = config.getProperty(key);
+            if (value != null && !value.equals(saved.getProperty(key))) {
+                changed.setProperty(key, value);
+            }
+        }
+        return changed;
+    }
+
+    private static Properties copyOf(Properties source) {
+        Properties copy = new Properties();
+        copy.putAll(source);
+        return copy;
     }
 
     private static final class BarHeightControl {
