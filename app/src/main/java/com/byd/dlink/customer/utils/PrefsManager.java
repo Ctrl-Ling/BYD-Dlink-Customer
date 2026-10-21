@@ -31,6 +31,15 @@ public class PrefsManager {
     public static final String KEY_OTA_REBOOT_INTERCEPT = "ota_reboot_intercept";
     public static final String KEY_OTA_UPDATE_DISABLED = "ota_update_disabled";
 
+    // Autostart management: BYD keeps a table of uid -> 1 (勾选，禁止自启动) / 0 (允许), and the
+    // package broadcast receiver rewrites every updated or newly installed app back to 1.
+    // The master switch gates the two hooks; the disable switch replaces the table AMS reads
+    // with an empty one, which makes the other two pointless, so they are mutually exclusive.
+    public static final String KEY_APP_START_ENABLED = "app_start_enabled";
+    public static final String KEY_APP_START_DISABLED = "app_start_disabled";
+    public static final String KEY_APP_START_KEEP_UPDATE = "app_start_keep_update";
+    public static final String KEY_APP_START_KEEP_INSTALL = "app_start_keep_install";
+
     // Per-app output gain: one master percentage the whole car obeys, multiplied by the
     // percentage configured for the playing package. 100 means "as the system plays it".
     public static final String KEY_APP_GAIN_ENABLED = "app_gain_enabled";
@@ -93,6 +102,10 @@ public class PrefsManager {
             {KEY_APP_CHANNEL_MASTER, "persist.byd.dlink.master_ch"},
             {KEY_OTA_REBOOT_INTERCEPT, "persist.byd.dlink.ota_reboot"},
             {KEY_OTA_UPDATE_DISABLED, "persist.byd.dlink.ota_disabled"},
+            {KEY_APP_START_ENABLED, "persist.byd.dlink.as_on"},
+            {KEY_APP_START_DISABLED, "persist.byd.dlink.as_off"},
+            {KEY_APP_START_KEEP_UPDATE, "persist.byd.dlink.as_keep"},
+            {KEY_APP_START_KEEP_INSTALL, "persist.byd.dlink.as_new"},
     };
 
     private static volatile boolean sPropChannelLogged = false;
@@ -300,6 +313,30 @@ public class PrefsManager {
 
     public static boolean isOtaUpdateDisabled() {
         return getBool(KEY_OTA_UPDATE_DISABLED);
+    }
+
+    public static boolean isAppStartHookEnabled() {
+        return getBool(KEY_APP_START_ENABLED);
+    }
+
+    /**
+     * With the gate removed there is nothing left to preserve, so the two per-broadcast switches
+     * answer "no" here rather than each call site having to remember the exclusion.
+     */
+    public static boolean isAppStartManagerDisabled() {
+        return isAppStartHookEnabled() && getBool(KEY_APP_START_DISABLED);
+    }
+
+    /** Don't let an update write the uid back to 禁止自启动. */
+    public static boolean isAppStartUpdatePreserved() {
+        return isAppStartHookEnabled() && !isAppStartManagerDisabled()
+                && getBool(KEY_APP_START_KEEP_UPDATE);
+    }
+
+    /** Don't give a freshly installed app the default 禁止自启动. */
+    public static boolean isAppStartInstallPreserved() {
+        return isAppStartHookEnabled() && !isAppStartManagerDisabled()
+                && getBool(KEY_APP_START_KEEP_INSTALL);
     }
 
     /** The step count configured for one audio stream, or STEPS_UNSET when it should be left alone. */

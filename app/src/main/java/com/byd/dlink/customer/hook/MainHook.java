@@ -48,10 +48,15 @@ public class MainHook implements IXposedHookLoadPackage {
                     + " navBar=" + PrefsManager.getNavigationBarHeightOverride()
                     + " volume=" + PrefsManager.isVolumeHookEnabled()
                     + " otaReboot=" + PrefsManager.isOtaRebootInterceptEnabled()
-                    + " otaDisable=" + PrefsManager.isOtaUpdateDisabled());
+                    + " otaDisable=" + PrefsManager.isOtaUpdateDisabled()
+                    + " appStart=" + PrefsManager.isAppStartHookEnabled()
+                    + " appStartOff=" + PrefsManager.isAppStartManagerDisabled()
+                    + " appStartUpdate=" + PrefsManager.isAppStartUpdatePreserved()
+                    + " appStartInstall=" + PrefsManager.isAppStartInstallPreserved());
             AppBlacklistHook.initSystemServer(lpparam);
             SystemBarHeightHook.init(lpparam);
             VolumeStepHook.init(lpparam);
+            AppStartHook.initSystemServer(lpparam);
             if (PrefsManager.isVolumeHookEnabled()) {
                 NaviVolumeChannel.init(lpparam);
             }

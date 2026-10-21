@@ -123,6 +123,11 @@ public class SettingsActivity extends AppCompatActivity {
     private SwitchCompat otaRebootSwitch;
     private SwitchCompat otaDisableSwitch;
     private TextView otaCurrentSlotText;
+    private SwitchCompat appStartSwitch;
+    private SwitchCompat appStartDisableSwitch;
+    private SwitchCompat appStartUpdateSwitch;
+    private SwitchCompat appStartInstallSwitch;
+    private View appStartSubPanel;
     private LinearLayout appGainList;
     private View addAppButton;
     private final List<AppGainControl> appGainControls = new ArrayList<>();
@@ -152,6 +157,7 @@ public class SettingsActivity extends AppCompatActivity {
         setupAppGain();
         setupAppChannel();
         setupOta();
+        setupAppStart();
         setupSeekBars();
         setupShellCommand();
         showPage(PAGE_HOME);
@@ -241,6 +247,11 @@ public class SettingsActivity extends AppCompatActivity {
         otaRebootSwitch = findViewById(R.id.otaRebootSwitch);
         otaDisableSwitch = findViewById(R.id.otaDisableSwitch);
         otaCurrentSlotText = findViewById(R.id.otaCurrentSlotText);
+        appStartSwitch = findViewById(R.id.appStartSwitch);
+        appStartDisableSwitch = findViewById(R.id.appStartDisableSwitch);
+        appStartUpdateSwitch = findViewById(R.id.appStartUpdateSwitch);
+        appStartInstallSwitch = findViewById(R.id.appStartInstallSwitch);
+        appStartSubPanel = findViewById(R.id.appStartSubPanel);
     }
 
     /**
@@ -361,6 +372,7 @@ public class SettingsActivity extends AppCompatActivity {
         entrySummaries[PAGE_VOLUME].setText(global && volumeSwitch.isChecked()
                 ? getString(R.string.entry_volume_format, streamsOn)
                 : getString(R.string.entry_state_off));
+        updateOtaEntrySummary();
         if (!global || !appGainSwitch.isChecked()) {
             entrySummaries[PAGE_APP_AUDIO].setText(R.string.entry_state_off);
             return;
@@ -376,25 +388,27 @@ public class SettingsActivity extends AppCompatActivity {
                 appGainControls.size(), configured);
         entrySummaries[PAGE_APP_AUDIO].setText(appChannelSwitch.isChecked()
                 ? getString(R.string.entry_app_channel_format, summary) : summary);
+    }
 
-        // OTA page summary
-        boolean otaReboot = otaRebootSwitch != null && otaRebootSwitch.isChecked();
-        boolean otaDisable = otaDisableSwitch != null && otaDisableSwitch.isChecked();
-        if (otaReboot || otaDisable) {
-            StringBuilder otaSummary = new StringBuilder();
-            if (otaReboot) {
-                otaSummary.append(getString(R.string.ota_reboot_intercept_title));
-            }
-            if (otaDisable) {
-                if (otaSummary.length() > 0) {
-                    otaSummary.append(", ");
-                }
-                otaSummary.append(getString(R.string.ota_update_disable_title));
-            }
-            entrySummaries[PAGE_OTA].setText(otaSummary.toString());
-        } else {
-            entrySummaries[PAGE_OTA].setText(R.string.entry_state_off);
+    /** The home row for the update page names every switch on it that is currently on. */
+    private void updateOtaEntrySummary() {
+        StringBuilder active = new StringBuilder();
+        appendOtaEntry(active, otaRebootSwitch != null && otaRebootSwitch.isChecked(),
+                R.string.ota_reboot_intercept_title);
+        appendOtaEntry(active, otaDisableSwitch != null && otaDisableSwitch.isChecked(),
+                R.string.ota_update_disable_title);
+        appendOtaEntry(active, appStartSwitch != null && appStartSwitch.isChecked(),
+                R.string.app_start_title);
+        entrySummaries[PAGE_OTA].setText(active.length() > 0
+                ? active.toString() : getString(R.string.entry_state_off));
+    }
+
+    private void appendOtaEntry(StringBuilder active, boolean on, int titleRes) {
+        if (!on) return;
+        if (active.length() > 0) {
+            active.append(", ");
         }
+        active.append(getString(titleRes));
     }
 
     private String barSummary() {
@@ -901,6 +915,75 @@ public class SettingsActivity extends AppCompatActivity {
                 updateEntrySummaries();
             }
         });
+    }
+
+    /**
+     * Autostart management hooks. The master switch only reveals the three choices, and the two
+     * persistence choices need no confirmation: worst case an app keeps a box ticked the user
+     * unticked. Which apps they cover is decided inside system_server on each package broadcast,
+     * so a change takes effect from the next update and only the very first use needs a reboot.
+     */
+    private void setupAppStart() {
+        appStartSwitch.setChecked(
+                "true".equals(config.getProperty(PrefsManager.KEY_APP_START_ENABLED, "false")));
+        appStartDisableSwitch.setChecked(
+                "true".equals(config.getProperty(PrefsManager.KEY_APP_START_DISABLED, "false")));
+        appStartUpdateSwitch.setChecked(
+                "true".equals(config.getProperty(PrefsManager.KEY_APP_START_KEEP_UPDATE, "false")));
+        appStartInstallSwitch.setChecked(
+                "true".equals(config.getProperty(PrefsManager.KEY_APP_START_KEEP_INSTALL, "false")));
+
+        appStartSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            config.setProperty(PrefsManager.KEY_APP_START_ENABLED, String.valueOf(isChecked));
+            saveConfig();
+            updateAppStartPanel();
+            updateEntrySummaries();
+        });
+
+        // One listener for all three: clearing the two that lost needs to hand the same listener
+        // back to them, which only works while a single instance serves every row.
+        CompoundButton.OnCheckedChangeListener exclusiveListener =
+                new CompoundButton.OnCheckedChangeListener() {
+                    @Override
+                    public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                        SwitchCompat source = (SwitchCompat) buttonView;
+                        config.setProperty(appStartKeyFor(source), String.valueOf(isChecked));
+                        if (isChecked) {
+                            for (SwitchCompat other : appStartOthersOf(source)) {
+                                if (!other.isChecked()) continue;
+                                other.setOnCheckedChangeListener(null);
+                                other.setChecked(false);
+                                other.setOnCheckedChangeListener(this);
+                                config.setProperty(appStartKeyFor(other), "false");
+                            }
+                        }
+                        saveConfig();
+                        updateEntrySummaries();
+                    }
+                };
+        appStartDisableSwitch.setOnCheckedChangeListener(exclusiveListener);
+        appStartUpdateSwitch.setOnCheckedChangeListener(exclusiveListener);
+        appStartInstallSwitch.setOnCheckedChangeListener(exclusiveListener);
+
+        updateAppStartPanel();
+    }
+
+    private void updateAppStartPanel() {
+        appStartSubPanel.setVisibility(
+                appStartSwitch.isChecked() ? View.VISIBLE : View.GONE);
+    }
+
+    private String appStartKeyFor(SwitchCompat switchView) {
+        if (switchView == appStartDisableSwitch) return PrefsManager.KEY_APP_START_DISABLED;
+        if (switchView == appStartUpdateSwitch) return PrefsManager.KEY_APP_START_KEEP_UPDATE;
+        return PrefsManager.KEY_APP_START_KEEP_INSTALL;
+    }
+
+    /** Removing the gate makes saving a tick state pointless, so the two choices cannot coexist. */
+    private SwitchCompat[] appStartOthersOf(SwitchCompat switchView) {
+        return switchView == appStartDisableSwitch
+                ? new SwitchCompat[]{appStartUpdateSwitch, appStartInstallSwitch}
+                : new SwitchCompat[]{appStartDisableSwitch};
     }
 
     /**

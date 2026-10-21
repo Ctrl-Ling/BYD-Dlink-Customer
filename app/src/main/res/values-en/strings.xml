@@ -134,4 +134,13 @@
     <string name="ota_update_disable_confirm_message">When enabled, the system will completely block OTA update checks and downloads.\n\nYou will not receive any new system update notifications until this feature is disabled.\n\nConfirm to enable?</string>
     <string name="ota_confirm_yes">Yes</string>
     <string name="ota_confirm_no">No</string>
+
+    <string name="app_start_title">Autostart Manager Hook</string>
+    <string name="app_start_summary">Hooks the built-in Autostart Manager so it remembers the apps you unticked.\n\nRequires a system reboot to take effect (hooks a system-level service).</string>
+    <string name="app_start_disable_title">Disable the autostart manager</string>
+    <string name="app_start_disable_summary">The system stops blocking any third-party app from being started, so every tick in Autostart Manager becomes ineffective. When this is on you do not need the two options below.</string>
+    <string name="app_start_update_title">Keep the state across app updates</string>
+    <string name="app_start_update_summary">When an app updates, its current tick state is kept: an app you unticked still allows autostart after the update.</string>
+    <string name="app_start_install_title">Never block a newly installed app</string>
+    <string name="app_start_install_summary">Newly installed apps keep autostart allowed instead of being written as blocked.</string>
 </resources>

@@ -134,4 +134,13 @@
     <string name="ota_update_disable_confirm_message">开启此功能后，系统将完全阻止 OTA 更新的检查和下载。\n\n开启后您将无法接收到新的系统更新推送，直到关闭此功能。\n\n是否确认开启？</string>
     <string name="ota_confirm_yes">是</string>
     <string name="ota_confirm_no">否</string>
+
+    <string name="app_start_title">自启动管理 Hook</string>
+    <string name="app_start_summary">Hook 系统自带的「自启动管理」，让它记住你取消勾选的应用。\n\n需要重启车机后生效（Hook 系统级服务）。</string>
+    <string name="app_start_disable_title">禁用系统自启动管理功能</string>
+    <string name="app_start_disable_summary">系统不再阻止任何第三方应用被拉起，「自启动管理」里的勾选全部失效。开启后不需要再开下面两项。</string>
+    <string name="app_start_update_title">应用更新后不自动禁止自启动</string>
+    <string name="app_start_update_summary">应用更新时保持当前勾选状态：已经取消勾选的应用更新后依然允许自启动。</string>
+    <string name="app_start_install_title">新安装应用不自动禁止自启动</string>
+    <string name="app_start_install_summary">新安装的应用默认允许自启动，不再被自动写入禁止自启动。</string>
 </resources>
