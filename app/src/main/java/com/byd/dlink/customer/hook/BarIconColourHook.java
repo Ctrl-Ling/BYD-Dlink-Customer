@@ -94,6 +94,18 @@ public class BarIconColourHook {
     private static int sDayId;
     private static int sNightId;
 
+    // Cache for hasOwnOrParentBackground() results - view backgrounds rarely change
+    private static final Map<View, Boolean> sBackgroundCache =
+            Collections.synchronizedMap(new WeakHashMap<View, Boolean>());
+
+    // Cache for inkOf() results - ImageView color filters rarely change
+    private static final Map<ImageView, Integer> sInkCache =
+            Collections.synchronizedMap(new WeakHashMap<ImageView, Integer>());
+
+    // Debounce: last reapply() timestamp to avoid redundant work
+    private static long sLastReapplyTime = 0;
+    private static final long REAPPLY_DEBOUNCE_MS = 100;
+
     public static void init(XC_LoadPackage.LoadPackageParam lpparam) {
         if (!SYSTEM_UI_PACKAGE.equals(lpparam.packageName)
                 || (!PrefsManager.isStatusBarBgEnabled() && !PrefsManager.isNavBarBgEnabled())) {
@@ -239,6 +251,10 @@ public class BarIconColourHook {
         if (bar == null || band == null) {
             return;
         }
+        // Clear caches before walking - view tree may have changed
+        sBackgroundCache.clear();
+        sInkCache.clear();
+
         Resources resources = bar.getResources();
         int id = inkId(resources, band.intValue());
         if (id == 0) {
@@ -278,8 +294,6 @@ public class BarIconColourHook {
                 int current = colours == null ? 0 : colours.getDefaultColor();
                 Integer ink = betterInk(current, band, target);
                 if (ink != null) {
-                    XposedBridge.log(TAG + ": pullInk TextView " + view.getClass().getSimpleName()
-                            + " current=" + Integer.toHexString(current) + " -> " + Integer.toHexString(ink));
                     ((TextView) view).setTextColor(ink);
                 }
             }
@@ -288,8 +302,6 @@ public class BarIconColourHook {
                 int current = inkOf((ImageView) view);
                 Integer ink = betterInk(current, band, target);
                 if (ink != null) {
-                    XposedBridge.log(TAG + ": pullInk ImageView " + view.getClass().getSimpleName()
-                            + " current=" + Integer.toHexString(current) + " -> " + Integer.toHexString(ink));
                     ((ImageView) view).setColorFilter(ink);
                 }
             }
@@ -308,17 +320,24 @@ public class BarIconColourHook {
      * own design and must not be recoloured by the band contrast logic.
      */
     private static boolean hasOwnOrParentBackground(View view) {
+        Boolean cached = sBackgroundCache.get(view);
+        if (cached != null) {
+            return cached;
+        }
         android.graphics.drawable.Drawable bg = view.getBackground();
         if (bg != null && !isInkBackground(bg)) {
+            sBackgroundCache.put(view, true);
             return true;
         }
         for (ViewParent parent = view.getParent(); parent instanceof View; parent = ((View) parent).getParent()) {
             View parentView = (View) parent;
             android.graphics.drawable.Drawable parentBg = parentView.getBackground();
             if (parentBg != null && !isInkBackground(parentBg)) {
+                sBackgroundCache.put(view, true);
                 return true;
             }
         }
+        sBackgroundCache.put(view, false);
         return false;
     }
 
@@ -343,19 +362,27 @@ public class BarIconColourHook {
 
     /** What an image is being drawn with, from whichever of the two mechanisms BYD used. */
     private static int inkOf(ImageView image) {
+        Integer cached = sInkCache.get(image);
+        if (cached != null) {
+            return cached;
+        }
         ColorFilter filter = image.getColorFilter();
         for (Class<?> owner = filter == null ? null : filter.getClass();
                 owner != null; owner = owner.getSuperclass()) {
             try {
                 Field colour = owner.getDeclaredField("mColor");
                 colour.setAccessible(true);
-                return colour.getInt(filter);
+                int result = colour.getInt(filter);
+                sInkCache.put(image, result);
+                return result;
             } catch (Throwable ignored) {
                 // Not a colour-carrying filter of this shape; the tint is the other place to look.
             }
         }
         ColorStateList tint = image.getImageTintList();
-        return tint == null ? 0 : tint.getDefaultColor();
+        int result = tint == null ? 0 : tint.getDefaultColor();
+        sInkCache.put(image, result);
+        return result;
     }
 
     /** @return the colour to use instead of {@code requested}, or null to let BYD's value stand. */
@@ -430,6 +457,12 @@ public class BarIconColourHook {
      * then rewrites it, so no remembered value can drift toward ours.
      */
     static void reapply() {
+        long now = System.currentTimeMillis();
+        if (now - sLastReapplyTime < REAPPLY_DEBOUNCE_MS) {
+            return;
+        }
+        sLastReapplyTime = now;
+
         Object dispatcher = sDispatcher == null ? null : sDispatcher.get();
         if (dispatcher != null && writeIconTint(dispatcher)) {
             try {
