@@ -125,10 +125,6 @@ public class BarIconColourHook {
     private static final Map<Integer, Integer> sBandJudgeCache =
             Collections.synchronizedMap(new WeakHashMap<Integer, Integer>());
 
-    // Debounce: last reapply() timestamp to avoid redundant work
-    private static long sLastReapplyTime = 0;
-    private static final long REAPPLY_DEBOUNCE_MS = 100;
-
     public static void init(XC_LoadPackage.LoadPackageParam lpparam) {
         if (!SYSTEM_UI_PACKAGE.equals(lpparam.packageName)
                 || (!PrefsManager.isStatusBarBgEnabled() && !PrefsManager.isNavBarBgEnabled())) {
@@ -503,10 +499,10 @@ public class BarIconColourHook {
         return BAR_NONE;
     }
 
-    /** The colour bar ink has to be readable against, or null while that bar is not ours to paint. */
+    /** The colour bar ink has to be readable against, or null while that bar has no colour to judge. */
     private static Integer bandOf(int bar) {
         return bandToJudge(bar == BAR_NAV
-                ? SystemBarBackgroundHook.navBarColour()
+                ? SystemBarBackgroundHook.navInkBackdrop()
                 : SystemBarBackgroundHook.statusBarColour());
     }
 
@@ -535,12 +531,6 @@ public class BarIconColourHook {
      * then rewrites it, so no remembered value can drift toward ours.
      */
     static void reapply() {
-        long now = System.currentTimeMillis();
-        if (now - sLastReapplyTime < REAPPLY_DEBOUNCE_MS) {
-            return;
-        }
-        sLastReapplyTime = now;
-
         Object dispatcher = sDispatcher == null ? null : sDispatcher.get();
         if (dispatcher != null && writeIconTint(dispatcher)) {
             try {
@@ -656,6 +646,30 @@ public class BarIconColourHook {
     private static float channel(int value) {
         float linear = value / 255f;
         return linear <= 0.03928f ? linear / 12.92f : (float) Math.pow((linear + 0.055f) / 1.055f, 2.4f);
+    }
+
+    /** What the nav ink decision sees, for the view-tree dump. */
+    static String inkReport() {
+        Integer judged = bandOf(BAR_NAV);
+        StringBuilder text = new StringBuilder("nav ink backdrop=")
+                .append(colour(SystemBarBackgroundHook.navInkBackdrop()))
+                .append(" judged=").append(colour(judged));
+        View bar = SystemBarBackgroundHook.navBarView();
+        Resources resources = bar == null ? null : bar.getResources();
+        if (resources != null) {
+            int chosen = inkId(resources, judged == null ? 0 : judged.intValue());
+            if (sDayId != 0 && sNightId != 0) {
+                text.append(" day=").append(colour(resources.getColor(sDayId)))
+                        .append(" night=").append(colour(resources.getColor(sNightId)))
+                        .append(" chosen=").append(judged == null ? "none"
+                                : chosen == sNightId ? "night" : chosen == sDayId ? "day" : "none");
+            }
+        }
+        return text.toString();
+    }
+
+    private static String colour(Integer value) {
+        return value == null ? "none" : String.format("#%06X", value.intValue() & 0xFFFFFF);
     }
 
     private static float contrast(int background, int foreground) {

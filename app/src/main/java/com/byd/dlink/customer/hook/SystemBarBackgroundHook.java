@@ -76,11 +76,9 @@ public class SystemBarBackgroundHook {
                                 apply();
                             } else if (NAV_BAR_VIEW.equals(name)) {
                                 sNavBarView = new WeakReference<>(bar);
-                                apply();
                                 // A bar that has just been laid out holds items that were bound and
-                                // coloured before it knew what was on screen, so this is the other
-                                // moment their ink has to be re-decided.
-                                BarIconColourHook.reapply();
+                                // coloured before it knew what was on screen; apply() re-decides them.
+                                apply();
                             }
                         }
                     });
@@ -96,11 +94,10 @@ public class SystemBarBackgroundHook {
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) {
                     sStatusBar = new WeakReference<>(param.thisObject);
-                    apply();
-                    // The bars' icons have to be re-decided on exactly this event, and only here: an
-                    // item is bound once, before any window has told SystemUI what is on screen. This
+                    // The bars' icons have to be re-decided on exactly this event, and apply() does it:
+                    // an item is bound once, before any window has told SystemUI what is on screen. This
                     // is not a layout pass, so re-running BYD's own colour setter is safe.
-                    BarIconColourHook.reapply();
+                    apply();
                 }
             });
             XposedBridge.log(TAG + ": bar background installed");
@@ -119,6 +116,11 @@ public class SystemBarBackgroundHook {
         sNavBarColour = paint(navBandView(), navBar, View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION,
                 false, PrefsManager.isNavBarBgAuto(), PrefsManager.isNavBarBgImmersiveEnabled(),
                 PrefsManager.getNavigationBarBgColor(), visibility);
+        // Whatever path decided the bands -- a window change, either bar's layout pass -- the icons on
+        // them have to be re-decided against the result. Repainting the band without re-inking the keys
+        // leaves the previous scene's ink sitting on the new colour: measured, a status-bar layout pass
+        // alone repainted the nav band white after a dark app, and every key kept a white filter.
+        BarIconColourHook.reapply();
     }
 
     /**
@@ -210,6 +212,21 @@ public class SystemBarBackgroundHook {
 
     public static Integer navBarColour() {
         return sNavBarColour;
+    }
+
+    /**
+     * What the nav keys are really drawn on. Ours when we paint the band; otherwise the app's own
+     * pixels showing through the transparent bar, read the same way auto colour reads an edge. A
+     * stand-down still leaves the icons needing ink that reads against those pixels -- BYD does not
+     * re-decide a bitmap key once it has tinted one, so a stale white filter survives onto a light
+     * home screen.
+     */
+    public static Integer navInkBackdrop() {
+        if (sNavBarColour != null) {
+            return sNavBarColour;
+        }
+        View bar = bar(sNavBarView);
+        return bar == null ? null : edgeColour(bar, false);
     }
 
     /** The nav bar view, so the icon hook can read the views inside it rather than wait to be called. */
