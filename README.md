@@ -117,7 +117,13 @@ Automated build and release workflow:
 
 This project is for educational and personal use only.
 
-## Disclaimer
+## ⚠️ Disclaimer & Risk Warning
+
+This module has only been tested on specific devices and environments (BYD 2021 Song Plus DM-i 13.5 controller with Dlink 4.0 + 4.5 UI Magisk module). **Using it on other devices or system versions may brick your device.**
+
+**Before installing, make sure you understand what you are doing.** It is strongly recommended to install the automatic brick rescue Magisk module first:
+
+> [神仙自动救砖 - 支持 OTA 稳定（重启前可刷救砖模块）](magisk_module/Automatic_brick_rescue_Magisk模块-神仙自动救砖-支持OTA稳定（重启前可刷救砖模块）.zip)
 
 This module modifies system behavior. Use at your own risk. The author is not responsible for any damage to your device.
 
@@ -236,6 +242,12 @@ app/src/main/java/com/byd/dlink/customer/
 
 本项目仅供教育和个人使用。
 
-## 免责声明
+## ⚠️ 免责声明与风险警告
+
+本模块仅在特定设备和环境下测试通过（比亚迪 2021 宋 Plus DM-i 13.5 控制器 + Dlink 4.0 + 4.5 UI Magisk 模块）。**在其他设备或系统版本上使用可能导致砖机。**
+
+**安装前请确保你知道自己在做什么。** 强烈建议先安装自动救砖 Magisk 模块：
+
+> [神仙自动救砖 - 支持 OTA 稳定（重启前可刷救砖模块）](magisk_module/Automatic_brick_rescue_Magisk模块-神仙自动救砖-支持OTA稳定（重启前可刷救砖模块）.zip)
 
 本模块会修改系统行为，使用风险自负。作者不对设备损坏承担任何责任。
