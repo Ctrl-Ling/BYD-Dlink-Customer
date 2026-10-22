@@ -152,4 +152,11 @@
     <string name="app_start_update_summary">When an app updates, its current tick state is kept: an app you unticked still allows autostart after the update.</string>
     <string name="app_start_install_title">Never block a newly installed app</string>
     <string name="app_start_install_summary">Newly installed apps keep autostart allowed instead of being written as blocked.</string>
+    <string name="system_variant_title">Current system</string>
+    <string name="system_variant_unselected">Not selected</string>
+    <string name="system_variant_picker_title">Choose the current system</string>
+    <string name="system_variant_desc">Hook points differ per system, so pick what your head unit actually runs. A reboot is needed for the change to take effect.</string>
+    <string name="system_variant_dlink34">Dlink 3.0/4.0</string>
+    <string name="system_variant_dlink45ui">Dlink 3.0/4.0 + 4.5 UI Magisk module</string>
+    <string name="system_variant_dlink5">Dlink 5.0 or later (untested, some features may not work)</string>
 </resources>

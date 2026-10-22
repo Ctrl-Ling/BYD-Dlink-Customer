@@ -101,6 +101,7 @@ public class SettingsActivity extends AppCompatActivity {
     private final TextView[] entrySummaries = new TextView[PAGE_COUNT];
     private int page = PAGE_HOME;
 
+    private TextView systemVariantValue;
     private SwitchCompat globalSwitch;
     private SwitchCompat splitScreenSwitch;
     private SwitchCompat splitBlacklistSwitch;
@@ -149,6 +150,7 @@ public class SettingsActivity extends AppCompatActivity {
 
         initViews();
         addFeatureEntries();
+        setupSystemVariant();
         setupGlobalSwitch();
         setupSplitScreenSwitch();
         setupSplitBlacklistSwitch();
@@ -169,6 +171,10 @@ public class SettingsActivity extends AppCompatActivity {
         updateEntrySummaries();
         updateModuleStatus();
         updateVersionInfo();
+        // Nothing that depends on which panel this is can be decided before he has said so.
+        if (systemVariantChoice() == PrefsManager.SYSTEM_VARIANT_UNSET) {
+            showSystemVariantPicker(true);
+        }
     }
 
     @Override
@@ -182,6 +188,7 @@ public class SettingsActivity extends AppCompatActivity {
     private void initViews() {
         settingsScroll = findViewById(R.id.settingsScroll);
         toolbar = findViewById(R.id.toolbar);
+        systemVariantValue = findViewById(R.id.systemVariantValue);
         pages[PAGE_HOME] = findViewById(R.id.pageHome);
         pages[PAGE_SPLIT] = findViewById(R.id.pageSplit);
         pages[PAGE_BARS] = findViewById(R.id.pageBars);
@@ -317,6 +324,66 @@ public class SettingsActivity extends AppCompatActivity {
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         params.topMargin = dp(16);
         parent.addView(row, params);
+    }
+
+    /**
+     * Which head unit the hooks are running against. Everything written so far assumes Dlink
+     * 3.0/4.0 plus the 4.5 UI Magisk module, and a 5.0+ panel answers to different classes, so the
+     * hooks that differ have to be told. Unanswered is offered as nothing selected rather than as
+     * the default, because on the first run there is no answer to fall back to.
+     */
+    private void setupSystemVariant() {
+        findViewById(R.id.systemVariantRow).setOnClickListener(v -> showSystemVariantPicker(false));
+        updateSystemVariantRow();
+    }
+
+    private int systemVariantChoice() {
+        return getIntProperty(PrefsManager.KEY_SYSTEM_VARIANT, PrefsManager.SYSTEM_VARIANT_UNSET);
+    }
+
+    private void updateSystemVariantRow() {
+        systemVariantValue.setText(labelForSystemVariant(systemVariantChoice()));
+    }
+
+    private String labelForSystemVariant(int variant) {
+        switch (variant) {
+            case PrefsManager.SYSTEM_DLINK_34:
+                return getString(R.string.system_variant_dlink34);
+            case PrefsManager.SYSTEM_DLINK_45UI:
+                return getString(R.string.system_variant_dlink45ui);
+            case PrefsManager.SYSTEM_DLINK_5:
+                return getString(R.string.system_variant_dlink5);
+            default:
+                return getString(R.string.system_variant_unselected);
+        }
+    }
+
+    /** Forced is the first run, where leaving the question unanswered is not an option. */
+    private void showSystemVariantPicker(boolean forced) {
+        final String[] labels = {
+                getString(R.string.system_variant_dlink34),
+                getString(R.string.system_variant_dlink45ui),
+                getString(R.string.system_variant_dlink5),
+        };
+        int current = systemVariantChoice();
+        AlertDialog.Builder builder = new AlertDialog.Builder(this)
+                .setTitle(R.string.system_variant_picker_title)
+                .setMessage(R.string.system_variant_desc)
+                .setSingleChoiceItems(labels, current == PrefsManager.SYSTEM_VARIANT_UNSET
+                        ? -1 : current - 1, (dialog, which) -> {
+                    int variant = which + 1;
+                    dialog.dismiss();
+                    if (variant == systemVariantChoice()) return;
+                    config.setProperty(PrefsManager.KEY_SYSTEM_VARIANT, String.valueOf(variant));
+                    saveConfig();
+                    updateSystemVariantRow();
+                });
+        if (!forced) {
+            builder.setNegativeButton(android.R.string.cancel, null);
+        }
+        AlertDialog dialog = builder.create();
+        dialog.setCancelable(!forced);
+        dialog.show();
     }
 
     private void showPage(int target) {

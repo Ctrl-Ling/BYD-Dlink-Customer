@@ -46,6 +46,16 @@ public class PrefsManager {
     public static final String KEY_SCREEN_CORNER_ENABLED = "screen_corner_enabled";
     public static final String KEY_SCREEN_CORNER_RADIUS = "screen_corner_radius";
 
+    // Which head unit this is. Every hook point so far was written against Dlink 3.0/4.0 carrying
+    // the 4.5 UI Magisk module, and a 5.0+ panel names different classes behind the same feature,
+    // so a hook that differs has to ask before it installs. No choice on record still means ②:
+    // that is what the module has always done, and an unanswered question must not change it.
+    public static final String KEY_SYSTEM_VARIANT = "system_variant";
+    public static final int SYSTEM_VARIANT_UNSET = 0;
+    public static final int SYSTEM_DLINK_34 = 1;
+    public static final int SYSTEM_DLINK_45UI = 2;
+    public static final int SYSTEM_DLINK_5 = 3;
+
     // Per-app output gain: one master percentage the whole car obeys, multiplied by the
     // percentage configured for the playing package. 100 means "as the system plays it".
     public static final String KEY_APP_GAIN_ENABLED = "app_gain_enabled";
@@ -117,6 +127,7 @@ public class PrefsManager {
             {KEY_APP_START_KEEP_INSTALL, "persist.byd.dlink.as_new"},
             {KEY_SCREEN_CORNER_ENABLED, "persist.byd.dlink.corner_on"},
             {KEY_SCREEN_CORNER_RADIUS, "persist.byd.dlink.corner_r"},
+            {KEY_SYSTEM_VARIANT, "persist.byd.dlink.sys_variant"},
     };
 
     private static volatile boolean sPropChannelLogged = false;
@@ -360,6 +371,18 @@ public class PrefsManager {
      */
     public static int getScreenCornerRadius() {
         return Math.max(CORNER_MIN, getInt(KEY_SCREEN_CORNER_RADIUS, CORNER_DEFAULT));
+    }
+
+    /** What the driver answered, SYSTEM_VARIANT_UNSET before the question has been answered. */
+    public static int getSystemVariant() {
+        int value = getInt(KEY_SYSTEM_VARIANT, SYSTEM_VARIANT_UNSET);
+        return value >= SYSTEM_DLINK_34 && value <= SYSTEM_DLINK_5 ? value : SYSTEM_VARIANT_UNSET;
+    }
+
+    /** The system the hooks obey while nobody has said otherwise: the one they were written for. */
+    public static int getEffectiveSystemVariant() {
+        int value = getSystemVariant();
+        return value == SYSTEM_VARIANT_UNSET ? SYSTEM_DLINK_45UI : value;
     }
 
     /** The step count configured for one audio stream, or STEPS_UNSET when it should be left alone. */

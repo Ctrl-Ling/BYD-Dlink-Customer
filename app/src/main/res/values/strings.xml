@@ -152,4 +152,11 @@
     <string name="app_start_update_summary">应用更新时保持当前勾选状态：已经取消勾选的应用更新后依然允许自启动。</string>
     <string name="app_start_install_title">新安装应用不自动禁止自启动</string>
     <string name="app_start_install_summary">新安装的应用默认允许自启动，不再被自动写入禁止自启动。</string>
+    <string name="system_variant_title">当前系统</string>
+    <string name="system_variant_unselected">未选择</string>
+    <string name="system_variant_picker_title">选择当前系统</string>
+    <string name="system_variant_desc">不同系统的 hook 点位不同，请按你车机的实际系统选择。修改后需重启车机生效。</string>
+    <string name="system_variant_dlink34">Dlink 3.0/4.0</string>
+    <string name="system_variant_dlink45ui">Dlink 3.0/4.0 + 4.5UI Magisk 模块</string>
+    <string name="system_variant_dlink5">Dlink 5.0 及以上（未测试，部分功能可能无效）</string>
 </resources>
