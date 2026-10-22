@@ -68,7 +68,7 @@
     <string name="screen_corner_clamped_format">The bars got shorter, so the corner radius was clamped to %1$d px</string>
     <string name="screen_corner_restart_message">Screen corners are on, but SystemUI has to restart before the black arcs are drawn. Restart it for you now?</string>
     <string name="entry_screen_corner_format">Corners %1$d px</string>
-    <string name="volume_title">Volume Steps</string>
+    <string name="volume_title">Volume Steps (testing)</string>
     <string name="volume_switch_title">Volume Steps Hook</string>
     <string name="volume_switch_summary">Enable to set steps for each volume stream, save and reboot to apply (test feature, may not work)</string>
     <string name="volume_steps_value_format">Current %1$d steps · Set to %2$d steps</string>
@@ -131,7 +131,7 @@
     <string name="version_info">Version %s</string>
 
     <!-- OTA Update Control -->
-    <string name="ota_title">OTA Update Control</string>
+    <string name="ota_title">Other</string>
     <string name="ota_reboot_intercept_title">Intercept Auto-Reboot After Update</string>
     <string name="ota_reboot_intercept_summary">After system update installation, do not auto-reboot. Show a dialog asking whether to reboot. For A/B partition devices, user decides when to switch slots and reboot.\n\nRequires system reboot to take effect (hooks system-level service).</string>
     <string name="ota_update_disable_title">Disable System Updates</string>

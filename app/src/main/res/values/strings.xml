@@ -68,7 +68,7 @@
     <string name="screen_corner_clamped_format">两条栏变矮了，圆角半径已同步为上限 %1$d px</string>
     <string name="screen_corner_restart_message">屏幕圆角已开启，需要重启系统界面（SystemUI）才会画上黑角。是否现在替您重启？</string>
     <string name="entry_screen_corner_format">屏幕圆角 %1$d px</string>
-    <string name="volume_title">音量阶数调整</string>
+    <string name="volume_title">音量阶数调整 (测试中)</string>
     <string name="volume_switch_title">音量阶数 Hook</string>
     <string name="volume_switch_summary">打开后逐个音量选择阶数，保存并重启车机后生效（测试功能，不一定有效）</string>
     <string name="volume_steps_value_format">当前 %1$d 阶 · 已设为 %2$d 阶</string>
@@ -131,7 +131,7 @@
     <string name="version_info">版本 %s</string>
 
     <!-- OTA Update Control -->
-    <string name="ota_title">OTA 更新控制</string>
+    <string name="ota_title">其他</string>
     <string name="ota_reboot_intercept_title">拦截更新后自动重启 ⚠️测试功能，请务必知道你在做什么，否则不要打开！！</string>
     <string name="ota_reboot_intercept_summary">系统更新安装完成后不自动重启，弹窗询问是否重启。适用于 A/B 分区设备，用户可自行决定何时切换槽位重启。\n\n需要重启车机后生效（Hook 系统级服务）。</string>
     <string name="ota_update_disable_title">禁用系统更新 ⚠️测试功能，请务必知道你在做什么，否则不要打开！！</string>
