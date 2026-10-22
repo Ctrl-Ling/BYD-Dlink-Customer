@@ -155,7 +155,8 @@
     <string name="system_variant_title">当前系统</string>
     <string name="system_variant_unselected">未选择</string>
     <string name="system_variant_picker_title">选择当前系统</string>
-    <string name="system_variant_desc">不同系统的 hook 点位不同，请按你车机的实际系统选择。修改后需重启车机生效。</string>
+    <string name="system_variant_desc">不同系统的 hook 点位不同，请按你车机的实际系统选择。修改后重启系统界面（SystemUI）即生效，无需重启车机。</string>
+    <string name="system_variant_restart_message">当前系统已设为 %1$s，需要重启系统界面（SystemUI）才会按这套点位画栏目。是否现在替您重启？</string>
     <string name="system_variant_dlink34">Dlink 3.0/4.0</string>
     <string name="system_variant_dlink45ui">Dlink 3.0/4.0 + 4.5UI Magisk 模块</string>
     <string name="system_variant_dlink5">Dlink 5.0 及以上（未测试，部分功能可能无效）</string>

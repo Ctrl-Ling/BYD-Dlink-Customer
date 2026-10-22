@@ -155,7 +155,8 @@
     <string name="system_variant_title">Current system</string>
     <string name="system_variant_unselected">Not selected</string>
     <string name="system_variant_picker_title">Choose the current system</string>
-    <string name="system_variant_desc">Hook points differ per system, so pick what your head unit actually runs. A reboot is needed for the change to take effect.</string>
+    <string name="system_variant_desc">Hook points differ per system, so pick what your head unit actually runs. Restarting SystemUI applies it; no device reboot needed.</string>
+    <string name="system_variant_restart_message">Current system set to %1$s. SystemUI needs to restart to lay the bars out for it. Restart now?</string>
     <string name="system_variant_dlink34">Dlink 3.0/4.0</string>
     <string name="system_variant_dlink45ui">Dlink 3.0/4.0 + 4.5 UI Magisk module</string>
     <string name="system_variant_dlink5">Dlink 5.0 or later (untested, some features may not work)</string>

@@ -417,6 +417,16 @@ public class SettingsActivity extends AppCompatActivity {
             saveConfig();
             updateSystemVariantRow();
             dialog.dismiss();
+            // Which bar content the panel has to re-centre is decided once, when SystemUI starts, so
+            // the answer only reaches the screen on that process's next start.
+            new AlertDialog.Builder(this)
+                    .setTitle(R.string.bar_restart_title)
+                    .setMessage(getString(R.string.system_variant_restart_message,
+                            labelForSystemVariant(checkedId)))
+                    .setPositiveButton(R.string.bar_restart_yes,
+                            (restartDialog, which) -> restartSystemUi())
+                    .setNegativeButton(R.string.bar_restart_no, null)
+                    .show();
         });
         dialog.setCancelable(!forced);
         dialog.show();

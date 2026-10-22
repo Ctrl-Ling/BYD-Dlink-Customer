@@ -10,8 +10,8 @@ android {
         applicationId "com.byd.dlink.customer"
         minSdk 29
         targetSdk 34
-        versionCode 204
-        versionName "1.203"
+        versionCode 205
+        versionName "1.204"
     }
 
     signingConfigs {
