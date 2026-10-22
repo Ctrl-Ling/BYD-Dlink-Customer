@@ -190,6 +190,19 @@ public class SettingsActivity extends AppCompatActivity {
     private void initViews() {
         settingsScroll = findViewById(R.id.settingsScroll);
         toolbar = findViewById(R.id.toolbar);
+        // The theme's own overflow dots are dark, and this toolbar sits on the blue header.
+        toolbar.setOverflowIcon(getDrawable(R.drawable.ic_more_vert));
+        toolbar.setOnMenuItemClickListener(item -> {
+            if (item.getItemId() == R.id.menu_restart_systemui) {
+                restartSystemUi();
+                return true;
+            }
+            if (item.getItemId() == R.id.menu_reboot_system) {
+                confirmRebootSystem();
+                return true;
+            }
+            return false;
+        });
         systemVariantValue = findViewById(R.id.systemVariantValue);
         pages[PAGE_HOME] = findViewById(R.id.pageHome);
         pages[PAGE_SPLIT] = findViewById(R.id.pageSplit);
@@ -441,6 +454,12 @@ public class SettingsActivity extends AppCompatActivity {
         toolbar.setNavigationIcon(target == PAGE_HOME
                 ? (Drawable) null : getDrawable(R.drawable.ic_arrow_back));
         toolbar.setNavigationOnClickListener(v -> showPage(PAGE_HOME));
+        // The two restart actions belong to the bars alone: their heights are measured once per
+        // boot and drawn by a process that only re-reads them when it starts.
+        toolbar.getMenu().clear();
+        if (target == PAGE_BARS) {
+            toolbar.inflateMenu(R.menu.bars_menu);
+        }
         settingsScroll.scrollTo(0, 0);
     }
 
@@ -822,6 +841,29 @@ public class SettingsActivity extends AppCompatActivity {
         } catch (Throwable t) {
             Log.e("BYD Dlink Customer", "restart SystemUI failed", t);
             Toast.makeText(this, R.string.bar_restart_failed, Toast.LENGTH_LONG).show();
+        }
+    }
+
+    /**
+     * Unlike a SystemUI restart, this one takes the whole head unit down with the screen dark, so
+     * it is never fired straight from a menu tap.
+     */
+    private void confirmRebootSystem() {
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.reboot_system_title)
+                .setMessage(R.string.reboot_system_message)
+                .setPositiveButton(R.string.reboot_system_yes, (dialog, which) -> rebootSystem())
+                .setNegativeButton(R.string.bar_restart_no, null)
+                .show();
+    }
+
+    /** The shell's reboot writes the control property init listens to, which is what a reboot is. */
+    private void rebootSystem() {
+        try {
+            Runtime.getRuntime().exec(new String[]{"su", "-c", "reboot"});
+        } catch (Throwable t) {
+            Log.e("BYD Dlink Customer", "reboot failed", t);
+            Toast.makeText(this, R.string.reboot_system_failed, Toast.LENGTH_LONG).show();
         }
     }
 

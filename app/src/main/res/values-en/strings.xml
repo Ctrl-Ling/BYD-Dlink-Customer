@@ -20,7 +20,7 @@
     <string name="split_screen_switch_summary">Enable custom split-screen ratio</string>
     <string name="split_blacklist_switch_title">Disable Split-Screen App Blacklist</string>
     <string name="split_blacklist_switch_summary">Show all apps in split-screen selection and allow them to enter split-screen</string>
-    <string name="system_bar_title">System Bar Height</string>
+    <string name="system_bar_title">System Bars</string>
     <string name="status_bar_switch_title">Modify Status Bar Height</string>
     <string name="nav_bar_switch_title">Modify Navigation Bar Height</string>
     <string name="system_bar_switch_summary">Enable to select new height, save and reboot the device to apply</string>
@@ -32,6 +32,12 @@
     <string name="system_bar_reboot_title">Reboot to Apply</string>
     <string name="system_bar_reboot_message">Height saved as %1$d px. Reboot the device to apply.</string>
     <string name="system_bar_reboot_confirm">OK</string>
+    <string name="bars_menu_restart_systemui">Restart SystemUI</string>
+    <string name="bars_menu_reboot_system">Reboot system</string>
+    <string name="reboot_system_title">Reboot the head unit?</string>
+    <string name="reboot_system_message">Bar heights are laid out at boot, so a reboot is what applies them. The screen goes dark while the unit restarts — make sure it is safe to do so now.</string>
+    <string name="reboot_system_yes">Yes, reboot</string>
+    <string name="reboot_system_failed">Reboot request did not run; check that this module has root</string>
     <string name="system_bar_bg_title">System Bar Background Color</string>
     <string name="status_bar_bg_switch_title">Status Bar Background Customization</string>
     <string name="nav_bar_bg_switch_title">Navigation Bar Background Customization</string>

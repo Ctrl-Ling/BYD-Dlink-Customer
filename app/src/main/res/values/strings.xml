@@ -20,7 +20,7 @@
     <string name="split_screen_switch_summary">启用自定义分屏比例</string>
     <string name="split_blacklist_switch_title">禁用分屏软件黑名单</string>
     <string name="split_blacklist_switch_summary">分屏选择界面显示全部应用，并允许其进入分屏</string>
-    <string name="system_bar_title">系统栏高度调整</string>
+    <string name="system_bar_title">系统栏调整</string>
     <string name="status_bar_switch_title">修改状态栏高度</string>
     <string name="nav_bar_switch_title">修改导航栏高度</string>
     <string name="system_bar_switch_summary">打开后选择新的高度，保存并重启车机后生效</string>
@@ -32,6 +32,12 @@
     <string name="system_bar_reboot_title">重启后生效</string>
     <string name="system_bar_reboot_message">高度已保存为 %1$d px，重启车机后生效。</string>
     <string name="system_bar_reboot_confirm">知道了</string>
+    <string name="bars_menu_restart_systemui">重启系统界面 (SystemUI)</string>
+    <string name="bars_menu_reboot_system">重启系统</string>
+    <string name="reboot_system_title">是否重启车机</string>
+    <string name="reboot_system_message">栏目高度要车机重启后才会按新值排版。重启期间屏幕会黑屏并重新开机，请先确认行车安全。是否现在重启？</string>
+    <string name="reboot_system_yes">是，重启车机</string>
+    <string name="reboot_system_failed">重启请求未执行，请确认本模块已拿到 root</string>
     <string name="system_bar_bg_title">系统栏背景色</string>
     <string name="status_bar_bg_switch_title">状态栏背景自定义</string>
     <string name="nav_bar_bg_switch_title">导航栏背景自定义</string>
@@ -76,7 +82,7 @@
     <string name="volume_steps_picker_hint">可设置范围 %1$d ~ %2$d 阶</string>
     <string name="volume_reboot_title">重启后生效</string>
     <string name="volume_reboot_message">%1$s 已设为 %2$d 阶，重启车机后生效。</string>
-    <string name="app_gain_title">应用音量百分比</string>
+    <string name="app_gain_title">应用音量调整</string>
     <string name="app_gain_switch_title">应用音量 Hook</string>
     <string name="app_gain_switch_summary">实际输出 = 总音量百分比 × 单应用百分比，无需重启，下一次播放即生效。只作用于下方列表中的应用，列表里的应用还需已在 LSPosed 作用域中勾选。</string>
     <string name="app_gain_master_title">总音量百分比</string>
