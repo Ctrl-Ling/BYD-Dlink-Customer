@@ -152,8 +152,9 @@ public class SplitScreenHook {
                                 + position + " (picker is up)");
                         return;
                     }
+                    int[] secondary = new int[1];
                     int wanted = snapPosition(param.thisObject, configured,
-                            activeSplitPosition(param.thisObject));
+                            activeSplitPosition(param.thisObject, secondary), secondary[0]);
                     if (position == wanted) return;
                     XposedBridge.log(TAG + ": calculateBoundsForPosition pos=" + position
                             + " dockSide=" + dockSide + " out=" + param.args[2]);
@@ -754,7 +755,7 @@ public class SplitScreenHook {
             int[] secondary = new int[1];
             int actual = getSplitPositions(dividerView, secondary);
             int target = configured > 0
-                    ? snapPosition(dividerView, configured, actual) : -1;
+                    ? snapPosition(dividerView, configured, actual, secondary[0]) : -1;
             boolean settled = near(actual, target)
                     && halvesClearDivider(dividerView, actual, secondary[0]);
             boolean selecting = settled ? false : isSelectingApp(dividerView);
@@ -771,7 +772,14 @@ public class SplitScreenHook {
                     + " other=" + secondary[0]
                     + " live=" + getLivePosition(dividerView)
                     + (skip == null ? " -> resize" : " skip=" + skip));
-            if (skip != null) return;
+            if (skip != null) {
+                // A release the system was already heading for resizes nothing, and then nobody
+                // takes back the shade the system put on the half it thought was being dismissed.
+                // That shade is the grey mask left over on one side after a drag. Not while the
+                // finger still has the strip: there the shade is the dismiss feedback itself.
+                if (!isDragging(dividerView)) clearResizeDim(dividerView);
+                return;
+            }
 
             Object snapAlgorithm = XposedHelpers.callMethod(dividerView, "getSnapAlgorithm");
             Object middle = XposedHelpers.callMethod(snapAlgorithm, "getMiddleTarget");
@@ -796,17 +804,29 @@ public class SplitScreenHook {
     // resizeStack also derives a "about to dismiss" shade fraction from the position it was
     // handed, and a position that is not one of the snap targets gives a non-zero fraction,
     // which leaves WindowManager grey-shading the docked stack. The fork never sees this
-    // because it only ever settles onto a real target. Clear it with the windowing mode
-    // resizeStack just recorded, so the dim is removed from the stack it was put on.
+    // because it only ever settles onto a real target. The proxy only remembers the last half
+    // it was told to shade, and a drag that ends on the other side leaves the first half's
+    // layer standing, so every split mode is cleared rather than just the remembered one.
     private static void clearResizeDim(Object dividerView) {
         try {
             Object proxy = XposedHelpers.getObjectField(dividerView, "mWindowManagerProxy");
             if (proxy == null) return;
-            int mode = intField(proxy, "mDimLayerTargetWindowingMode");
-            XposedHelpers.callMethod(proxy, "setResizeDimLayer", false, mode, 0f);
-            XposedBridge.log(TAG + ": resize dim cleared (mode=" + mode + ")");
+            int remembered = intField(proxy, "mDimLayerTargetWindowingMode");
+            clearResizeDimLayer(proxy, remembered);
+            clearResizeDimLayer(proxy, sPrimaryMode);
+            clearResizeDimLayer(proxy, sSecondaryMode);
+            XposedBridge.log(TAG + ": resize dim cleared (remembered=" + remembered + ")");
         } catch (Throwable t) {
             XposedBridge.log(TAG + ": resize dim clear failed: " + t);
+        }
+    }
+
+    private static void clearResizeDimLayer(Object proxy, int mode) {
+        if (mode <= 0) return;
+        try {
+            XposedHelpers.callMethod(proxy, "setResizeDimLayer", false, mode, 0f);
+        } catch (Throwable t) {
+            XposedBridge.log(TAG + ": resize dim clear failed (mode=" + mode + "): " + t);
         }
     }
 
@@ -952,11 +972,15 @@ public class SplitScreenHook {
     // setting lands on 73%. Only live geometry is read, never the stored setting, so the next
     // split entry still starts from 27%.
     //
-    // The catch is that a freshly composed split sits on this middle target too (measured: 974,
-    // not the 953 an even share of the two halves gives), so position alone cannot tell "the user
-    // let go at half" from "this split has not reached the setting yet". The half-way test below
-    // is kept for a layout that really does split the screen evenly.
-    private static int snapPosition(Object obj, int configured, int actual) {
+    // The exception is the split the system has just composed, which hands both halves an even
+    // share of the screen (measured: primary to 953, secondary from 967) and then runs no further
+    // layout pass, so the ratio has to be applied here. One edge cannot claim that state: a drag
+    // released near the centre walks the primary edge through 953 on its way to the middle target
+    // and the strip follows it there. What a drag never produces is the even share as a pair --
+    // the half being left behind keeps its distance from the middle target (measured: primary 949
+    // with secondary 988, primary 958 with the strip still at 945) -- so both edges and the
+    // stopped strip have to name the same even split before it counts as a composition.
+    private static int snapPosition(Object obj, int configured, int actual, int other) {
         int total = getTotalSize(obj);
         Object view = dividerViewController(obj);
         int middle = middleTargetPosition(view);
@@ -964,12 +988,31 @@ public class SplitScreenHook {
         int mirrored = total - configured;
         int half = halfSplitPosition(obj, total);
         if (half >= 0) {
-            if (near(actual, half)) return configured;
+            if (evenShare(actual, other, half, dividerGutter(obj))
+                    && dividerRestsAt(view, actual)) {
+                return configured;
+            }
             if (nearestTo(actual, middle, configured) && nearestTo(actual, middle, mirrored)) {
                 return middle;
             }
         }
         return actual > middle ? mirrored : configured;
+    }
+
+    // Whether the two halves sit on an even share with the divider gutter between them. A gutter
+    // that is missing or comes out of pre-layout field values answers no, which stands the
+    // composition branch down rather than let it claim a mid-point and pin every split at half.
+    private static boolean evenShare(int actual, int other, int half, int gutter) {
+        return gutter > 0 && other > 0 && near(actual, half) && near(other, half + gutter);
+    }
+
+    // Whether the strip has come to rest on the edge the task rects report. A snap animation
+    // moves the two tasks to the target first and walks the strip behind them (measured: strip
+    // at 741 with the primary already at 974), so a strip naming another position means the
+    // gesture has not landed yet and the reading is of a split in transit, not at rest.
+    private static boolean dividerRestsAt(Object view, int edge) {
+        int live = getLivePosition(view);
+        return live <= 0 || near(live, edge);
     }
 
     // Whether {@code middle} is at least as close to {@code actual} as {@code other}.
@@ -978,10 +1021,9 @@ public class SplitScreenHook {
     }
 
     // Where an even share of the screen between the two halves falls, less the gutter between
-    // them. Measured on this device a composition does not use it -- it lands on the middle
-    // target instead -- so this only catches a layout that really does split evenly. A gutter
-    // that is missing or comes out of pre-layout field values answers -1, which stands the 50%
-    // resting point down rather than let it claim the mid-point and pin every split at half.
+    // them -- the position a composition parks at before the ratio is applied. A gutter that is
+    // missing or comes out of pre-layout field values answers -1, which stands the 50% resting
+    // point down rather than let it claim the mid-point and pin every split at half.
     private static int halfSplitPosition(Object obj, int total) {
         int gutter = dividerGutter(obj);
         if (gutter <= 0 || total <= gutter) return -1;
@@ -1450,15 +1492,17 @@ public class SplitScreenHook {
         // Every position-forcing path funnels through here, so this single check
         // keeps the whole split at the system default while the picker is up.
         int configured = getConfiguredPosition(obj);
-        return configured > 0 && !isSelectingApp(view)
-                ? snapPosition(obj, configured, activeSplitPosition(view)) : 0;
+        if (configured <= 0 || isSelectingApp(view)) return 0;
+        int[] secondary = new int[1];
+        return snapPosition(obj, configured, activeSplitPosition(view, secondary), secondary[0]);
     }
 
     // Where the split is right now. WindowManager is authoritative, but a split the framework
     // built without the view has no task bounds to report yet, and that is exactly the moment
-    // the callers here need a position -- the divider window's own frame answers it.
-    private static int activeSplitPosition(Object dividerView) {
-        int actual = getSplitPositions(dividerView, null);
+    // the callers here need a position -- the divider window's own frame answers it. The second
+    // edge is reported alongside because the composition test needs both halves to agree.
+    private static int activeSplitPosition(Object dividerView, int[] secondaryOut) {
+        int actual = getSplitPositions(dividerView, secondaryOut);
         return actual > 0 ? actual : getLivePosition(dividerView);
     }
 
