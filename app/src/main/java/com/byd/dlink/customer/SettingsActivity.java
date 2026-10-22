@@ -28,6 +28,8 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.NumberPicker;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
@@ -358,30 +360,64 @@ public class SettingsActivity extends AppCompatActivity {
         }
     }
 
-    /** Forced is the first run, where leaving the question unanswered is not an option. */
+    /**
+     * Forced is the first run, where leaving the question unanswered is not an option.
+     * The three choices are built here rather than handed to AlertDialog's list: on the head unit
+     * that list arrives with no rows at all -- title and message render, the items never do -- and a
+     * theme colour the rows inherit could hide them even when they exist, so both the rows and their
+     * text colour are ours.
+     */
     private void showSystemVariantPicker(boolean forced) {
-        final String[] labels = {
-                getString(R.string.system_variant_dlink34),
-                getString(R.string.system_variant_dlink45ui),
-                getString(R.string.system_variant_dlink5),
+        final int[] variants = {
+                PrefsManager.SYSTEM_DLINK_34,
+                PrefsManager.SYSTEM_DLINK_45UI,
+                PrefsManager.SYSTEM_DLINK_5,
         };
-        int current = systemVariantChoice();
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(24), dp(4), dp(24), dp(4));
+
+        TextView desc = new TextView(this);
+        desc.setText(R.string.system_variant_desc);
+        desc.setTextColor(getColor(R.color.colorTextSecondary));
+        desc.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        content.addView(desc, fullWidth());
+
+        final int current = systemVariantChoice();
+        final RadioGroup options = new RadioGroup(this);
+        options.setOrientation(RadioGroup.VERTICAL);
+        for (int variant : variants) {
+            RadioButton option = new RadioButton(this);
+            option.setId(variant);
+            option.setText(labelForSystemVariant(variant));
+            option.setTextColor(getColor(R.color.colorTextPrimary));
+            option.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+            option.setPadding(0, dp(10), 0, dp(10));
+            // The longest label is wider than the dialog, so it wraps inside its row.
+            option.setMinWidth(0);
+            options.addView(option, fullWidth());
+        }
+        // Before the listener, so the answer already on record does not read as a new one.
+        if (current != PrefsManager.SYSTEM_VARIANT_UNSET) {
+            options.check(current);
+        }
+        content.addView(options, fullWidth());
+
         AlertDialog.Builder builder = new AlertDialog.Builder(this)
                 .setTitle(R.string.system_variant_picker_title)
-                .setMessage(R.string.system_variant_desc)
-                .setSingleChoiceItems(labels, current == PrefsManager.SYSTEM_VARIANT_UNSET
-                        ? -1 : current - 1, (dialog, which) -> {
-                    int variant = which + 1;
-                    dialog.dismiss();
-                    if (variant == systemVariantChoice()) return;
-                    config.setProperty(PrefsManager.KEY_SYSTEM_VARIANT, String.valueOf(variant));
-                    saveConfig();
-                    updateSystemVariantRow();
-                });
+                .setView(content);
         if (!forced) {
             builder.setNegativeButton(android.R.string.cancel, null);
         }
-        AlertDialog dialog = builder.create();
+        final AlertDialog dialog = builder.create();
+        options.setOnCheckedChangeListener((group, checkedId) -> {
+            if (checkedId == current) return;
+            config.setProperty(PrefsManager.KEY_SYSTEM_VARIANT, String.valueOf(checkedId));
+            saveConfig();
+            updateSystemVariantRow();
+            dialog.dismiss();
+        });
         dialog.setCancelable(!forced);
         dialog.show();
     }
@@ -1016,6 +1052,11 @@ public class SettingsActivity extends AppCompatActivity {
 
     private int dp(int value) {
         return (int) (getResources().getDisplayMetrics().density * value);
+    }
+
+    private LinearLayout.LayoutParams fullWidth() {
+        return new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
     }
 
     /**
