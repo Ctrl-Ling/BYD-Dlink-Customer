@@ -77,17 +77,20 @@ public class ScreenCornerHook {
     }
 
     /**
-     * The two corners of one band that touch the edge of the screen, filled outside a quarter arc.
+     * The two corners of one band that touch the edge of the screen, filled outside the corner arc.
      *
-     * The arc is a pre-computed bitmap rather than a {@link Path}: a hardware canvas tessellates a
-     * filled path into chords, and at the radii this panel can carry -- ten pixels across -- the
-     * chords are what the eye catches. Sampling the coverage once, when the radius changes, gives
-     * every pixel its exact share of bezel and leaves nothing for the tessellator to approximate.
+     * The arc is a pre-computed bitmap rather than a filled path: a hardware canvas turns a path
+     * into chords before filling it, and at the radii this panel can carry -- tens of pixels across
+     * -- the chords are what the eye catches. Sampling the coverage once, when the radius changes,
+     * gives every pixel its exact share of bezel and leaves nothing for the tessellator to guess at.
      */
     private static final class CornerMask extends Drawable {
 
         /** Per axis, so a pixel's coverage is known to better than one grey level. */
         private static final int SAMPLES = 8;
+
+        /** 2 is a circle; 4 flattens the arc against both screen edges, which is the look he picked. */
+        private static final double EXPONENT = 4;
 
         private final Bitmap mCorner;
         private final Paint mPaint = new Paint();
@@ -109,26 +112,52 @@ public class ScreenCornerHook {
          * One corner, the top-left, as the fraction of each pixel that falls outside the arc. The
          * other three are this one mirrored, which is why a single bitmap covers the whole screen
          * and why the arc stays tangent to both screen edges however the bars are laid out.
+         *
+         * The last pass averages each pixel with its neighbours, which is what carries the end of
+         * the arc out to nothing instead of leaving it to stop on a pixel boundary.
          */
         private static Bitmap build(int radius) {
+            double[] coverage = sample(radius);
             int[] pixels = new int[radius * radius];
-            double r2 = (double) radius * radius;
+            for (int y = 0; y < radius; y++) {
+                for (int x = 0; x < radius; x++) {
+                    double sum = 0;
+                    for (int j = -1; j <= 1; j++) {
+                        for (int i = -1; i <= 1; i++) {
+                            sum += coverage[edge(coverage, radius, y + j, x + i)];
+                        }
+                    }
+                    pixels[y * radius + x] = (int) Math.round(sum * 255 / 9) << 24;
+                }
+            }
+            return Bitmap.createBitmap(pixels, radius, radius, Bitmap.Config.ARGB_8888);
+        }
+
+        /** How much of each pixel lies outside the arc through it. */
+        private static double[] sample(int radius) {
+            double[] coverage = new double[radius * radius];
+            double r = radius, corner = Math.pow(radius, EXPONENT);
             for (int y = 0; y < radius; y++) {
                 for (int x = 0; x < radius; x++) {
                     int outside = 0;
                     for (int j = 0; j < SAMPLES; j++) {
-                        double dy = radius - (y + (j + 0.5) / SAMPLES);
+                        double dy = Math.pow(r - (y + (j + 0.5) / SAMPLES), EXPONENT);
                         for (int i = 0; i < SAMPLES; i++) {
-                            double dx = radius - (x + (i + 0.5) / SAMPLES);
-                            if (dx * dx + dy * dy > r2) {
+                            if (Math.pow(r - (x + (i + 0.5) / SAMPLES), EXPONENT) + dy > corner) {
                                 outside++;
                             }
                         }
                     }
-                    pixels[y * radius + x] = (outside * 255 + SAMPLES * SAMPLES / 2) / (SAMPLES * SAMPLES) << 24;
+                    coverage[y * radius + x] = (double) outside / (SAMPLES * SAMPLES);
                 }
             }
-            return Bitmap.createBitmap(pixels, radius, radius, Bitmap.Config.ARGB_8888);
+            return coverage;
+        }
+
+        private static int edge(double[] coverage, int radius, int y, int x) {
+            int row = y < 0 ? 0 : y >= radius ? radius - 1 : y;
+            int column = x < 0 ? 0 : x >= radius ? radius - 1 : x;
+            return row * radius + column;
         }
 
         @Override
