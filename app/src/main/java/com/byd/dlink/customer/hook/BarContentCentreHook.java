@@ -58,8 +58,8 @@ public class BarContentCentreHook {
 
     public static void init(XC_LoadPackage.LoadPackageParam lpparam) {
         if (!SYSTEM_UI_PACKAGE.equals(lpparam.packageName)
-                || (PrefsManager.getStatusBarHeightOverride() < 0
-                && PrefsManager.getNavigationBarHeightOverride() < 0)) {
+                || (PrefsManager.getLaidOutStatusBarHeight() < 0
+                && PrefsManager.getLaidOutNavigationBarHeight() < 0)) {
             return;
         }
         // 3.0/4.0 keeps its bar content inside boxes whose height came out of the stock bar, so

@@ -28,7 +28,10 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
  * height, which put every icon off-centre inside its own cropped box.
  *
  * Installed in system_server (WindowManager) and SystemUI (the process that draws the two bars).
- * Values are read at process start, which is why the settings screen promises the change on reboot.
+ * Only the first of them decides anything: it measures once at its own start and lays every window
+ * around that number for the rest of the boot, so it publishes what it settled on and SystemUI
+ * draws exactly that. Until the panel reboots, the published numbers cannot move, which is why the
+ * settings screen promises a new height on reboot rather than on the spot.
  */
 public class SystemBarHeightHook {
 
@@ -39,9 +42,25 @@ public class SystemBarHeightHook {
     };
     private static final int NOT_A_BAR = -1;
 
+    /**
+     * WindowManager is the process whose measurement every window is laid around, so it reads the
+     * height the user asked for and then tells everyone else what that turned out to be.
+     */
+    public static void initSystemServer(XC_LoadPackage.LoadPackageParam lpparam) {
+        int statusBarPx = PrefsManager.getStatusBarHeightOverride();
+        int navBarPx = PrefsManager.getNavigationBarHeightOverride();
+        PrefsManager.publishLaidOutBarHeights(statusBarPx, navBarPx);
+        install(lpparam, statusBarPx, navBarPx);
+    }
+
+    /** A process that draws: it may only be as tall as the space WindowManager already reserved. */
     public static void init(XC_LoadPackage.LoadPackageParam lpparam) {
-        final int statusBarPx = PrefsManager.getStatusBarHeightOverride();
-        final int navBarPx = PrefsManager.getNavigationBarHeightOverride();
+        install(lpparam, PrefsManager.getLaidOutStatusBarHeight(),
+                PrefsManager.getLaidOutNavigationBarHeight());
+    }
+
+    private static void install(XC_LoadPackage.LoadPackageParam lpparam,
+            int statusBarPx, int navBarPx) {
         if (statusBarPx < 0 && navBarPx < 0) {
             return;
         }

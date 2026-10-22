@@ -54,7 +54,7 @@ public class MainHook implements IXposedHookLoadPackage {
                     + " appStartUpdate=" + PrefsManager.isAppStartUpdatePreserved()
                     + " appStartInstall=" + PrefsManager.isAppStartInstallPreserved());
             AppBlacklistHook.initSystemServer(lpparam);
-            SystemBarHeightHook.init(lpparam);
+            SystemBarHeightHook.initSystemServer(lpparam);
             VolumeStepHook.init(lpparam);
             AppStartHook.initSystemServer(lpparam);
             if (PrefsManager.isVolumeHookEnabled()) {

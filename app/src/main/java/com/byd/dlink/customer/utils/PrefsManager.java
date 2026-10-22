@@ -133,6 +133,21 @@ public class PrefsManager {
     private static volatile boolean sPropChannelLogged = false;
     private static volatile Method sPropGet = null;
     private static volatile boolean sPropReflectFailed = false;
+    private static volatile Method sPropSet = null;
+
+    // What WindowManager committed for this boot. It measures the two bars once, when system_server
+    // starts, and lays every window around those numbers for the rest of the boot -- an app starts
+    // its content below the committed bar and paints its own background into the space above it.
+    // So a bar drawn at any other height leaves that private strip showing through as a black band.
+    // system_server republishes its own numbers here, and every other process obeys them until the
+    // panel reboots, which is when the settings screen promises a new height to take effect.
+    // The prefix is sys. because that is the only one this ROM's SELinux lets system_server write
+    // outside its own names; the names are short because init refuses the long ones. Leaving them
+    // unpersisted is the point: a value from a boot that no longer happened must never outlive it,
+    // and while the prop is still missing every process falls back to the height the user asked
+    // for, which is exactly what WindowManager is reading at that same moment.
+    private static final String PROP_LAID_OUT_STATUS_BAR = "sys.byd.sbh";
+    private static final String PROP_LAID_OUT_NAV_BAR = "sys.byd.nbh";
 
     private static String readProp(String key) {
         try {
@@ -254,6 +269,53 @@ public class PrefsManager {
     public static int getNavigationBarHeightOverride() {
         return isGlobalEnabled() && getBool(KEY_NAV_BAR_ENABLED)
                 ? getInt(KEY_NAV_BAR_HEIGHT, HEIGHT_UNSET) : HEIGHT_UNSET;
+    }
+
+    /**
+     * The height WindowManager has already laid every window around, which is the only height
+     * SystemUI may draw its bar at. Use these in any process that draws; system_server, which is
+     * the one doing the laying out, keeps reading the pending value above.
+     */
+    public static int getLaidOutStatusBarHeight() {
+        return laidOutHeight(PROP_LAID_OUT_STATUS_BAR, getStatusBarHeightOverride());
+    }
+
+    public static int getLaidOutNavigationBarHeight() {
+        return laidOutHeight(PROP_LAID_OUT_NAV_BAR, getNavigationBarHeightOverride());
+    }
+
+    /** Publish what this process is about to lay out with, so the processes that draw obey it. */
+    public static void publishLaidOutBarHeights(int statusBarPx, int navBarPx) {
+        writeProp(PROP_LAID_OUT_STATUS_BAR, statusBarPx);
+        writeProp(PROP_LAID_OUT_NAV_BAR, navBarPx);
+    }
+
+    private static int laidOutHeight(String prop, int pending) {
+        String value = readProp(prop);
+        // Nothing published yet -- the first boot after installing the module, or a write this ROM
+        // refused -- and the pending height is what the module has always drawn.
+        if (value == null) {
+            return pending;
+        }
+        try {
+            return Integer.parseInt(value);
+        } catch (Throwable t) {
+            return pending;
+        }
+    }
+
+    private static void writeProp(String prop, int value) {
+        try {
+            Method set = sPropSet;
+            if (set == null) {
+                set = Class.forName("android.os.SystemProperties")
+                        .getMethod("set", String.class, String.class);
+                sPropSet = set;
+            }
+            set.invoke(null, prop, String.valueOf(value));
+        } catch (Throwable t) {
+            XposedBridge.log("BYD Dlink Customer: " + prop + " not published: " + t);
+        }
     }
 
     /**
