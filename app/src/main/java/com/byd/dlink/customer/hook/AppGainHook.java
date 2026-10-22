@@ -1,5 +1,6 @@
 package com.byd.dlink.customer.hook;
 
+import android.media.AudioAttributes;
 import android.media.AudioFormat;
 import android.media.AudioTrack;
 import android.media.MediaPlayer;
@@ -32,6 +33,13 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
  * Both levers can only attenuate -- a factor above 1.0 would clip -- and the system volume, BYD
  * ducking and the amp ladder stay as built.
  *
+ * Which lever a track gets is decided by the channel the track itself names, not by what this
+ * module was asked to set for its app: an app can put itself on one of BYD's channels on its own --
+ * the map's guidance voice was measured asking for content 2 (music) on stream 14 (navigation) --
+ * and on such an output the volume call is inaudible whether or not anybody configured a channel
+ * for it. Both shapes of that answer are asked, because the content type alone misses an app that
+ * picks a BYD stream instead of a BYD content type.
+ *
  * The factor is read live from the config properties on every call, so moving a slider here
  * changes what a player hears without restarting anything.
  */
@@ -44,6 +52,13 @@ public class AppGainHook {
     private static final int BYD_FIRST_CONTENT = 5;
 
     /**
+     * Stream types below this are AOSP's own too. An app that names a BYD channel through the
+     * legacy stream type instead of through its attributes -- the map's guidance voice arrives as
+     * content 2 (music) on stream 14 (navigation) -- is on that channel just the same.
+     */
+    private static final int BYD_FIRST_STREAM = 11;
+
+    /**
      * What the app itself asked for, per player object. Hooks write raw * factor, never
      * current * factor, so neither a framework-internal re-entry (AudioTrack.setVolume(float)
      * delegates to the hooked two-channel overload) nor a play() re-assert can compound the scale.
@@ -54,6 +69,13 @@ public class AppGainHook {
     /** A track's sample format never changes once it exists, so it is worth remembering. */
     private static final Map<Object, Integer> ENCODINGS =
             Collections.synchronizedMap(new WeakHashMap<Object, Integer>());
+
+    /**
+     * The content type, the legacy stream type and the usage a track was built for. None of the
+     * three changes once the track exists, and reading them costs a call per volume change.
+     */
+    private static final Map<Object, int[]> CHANNELS =
+            Collections.synchronizedMap(new WeakHashMap<Object, int[]>());
 
     /** Only to keep the log to one line per track: writes are per buffer, not per playback. */
     private static final Map<Object, Boolean> SCALED =
@@ -122,18 +144,19 @@ public class AppGainHook {
         return new XC_MethodHook() {
             @Override
             protected void beforeHookedMethod(MethodHookParam param) {
-                if (samplesInsteadOfVolume(param.thisObject)) {
+                Object player = param.thisObject;
+                if (samplesInsteadOfVolume(player)) {
                     return;
                 }
                 float left = (Float) param.args[leftIndex];
                 float right = (Float) param.args[leftIndex + 1];
-                REQUESTED.put(param.thisObject, new float[] {left, right});
+                REQUESTED.put(player, new float[] {left, right});
                 float factor = factor();
                 param.args[leftIndex] = left * factor;
                 param.args[leftIndex + 1] = right * factor;
-                report(param.thisObject.getClass().getSimpleName() + " " + left + "x" + right
+                report(player.getClass().getSimpleName() + " " + left + "x" + right
                         + " -> " + param.args[leftIndex] + "x" + param.args[leftIndex + 1]
-                        + " (factor " + factor + ")");
+                        + " (factor " + factor + ")" + where(player));
             }
         };
     }
@@ -156,7 +179,13 @@ public class AppGainHook {
         return new XC_MethodHook() {
             @Override
             protected void afterHookedMethod(MethodHookParam param) {
-                if (param.getThrowable() != null || samplesInsteadOfVolume(param.thisObject)) {
+                if (param.getThrowable() != null) {
+                    return;
+                }
+                if (samplesInsteadOfVolume(param.thisObject)) {
+                    report(param.thisObject.getClass().getSimpleName()
+                            + " plays on BYD output" + where(param.thisObject)
+                            + ", volume left as the app set it");
                     return;
                 }
                 float factor = factor();
@@ -179,22 +208,25 @@ public class AppGainHook {
 
     /**
      * Attenuating the PCM is the only lever BYD's own outputs leave an app, so every write of a
-     * track from an app sitting on one of them passes through here. An app on an AOSP channel keeps
-     * its volume scaling, which was measured working there.
+     * track sitting on one of them passes through here. A track on an AOSP output keeps its volume
+     * scaling, which was measured working there.
      */
     private static void installSampleScaling() {
         XC_MethodHook scaleWrites = new XC_MethodHook() {
             @Override
             protected void beforeHookedMethod(MethodHookParam param) {
                 float factor = factor();
-                if (factor >= 1f || !bydChannel()) {
+                if (factor >= 1f) {
                     return;
                 }
                 AudioTrack track = (AudioTrack) param.thisObject;
+                if (!bydOutput(track)) {
+                    return;
+                }
                 try {
                     if (!SCALED.containsKey(track)) {
                         SCALED.put(track, Boolean.TRUE);
-                        report("AudioTrack writes scaled by " + factor
+                        report("AudioTrack" + where(track) + " writes scaled by " + factor
                                 + " instead of by its volume");
                     }
                     scaleData(param.args, factor, track);
@@ -207,13 +239,73 @@ public class AppGainHook {
         XposedBridge.hookAllMethods(AudioTrack.class, "writeStatic", scaleWrites);
     }
 
-    /** Whether this app's media was put on an output that mixes every track at unity. */
+    /** Whether this module was asked to put this app on one of BYD's own channels. */
     private static boolean bydChannel() {
         return PrefsManager.getChannelFor(packageName) >= BYD_FIRST_CONTENT;
     }
 
+    /**
+     * Which channel a track says it was built for, in every shape an app can name one in: the
+     * content type of its attributes, the legacy stream type, and the usage BYD's own stream
+     * translation reads. Whichever of them carries BYD's value decides how the track's output has
+     * to be found.
+     */
+    private static String where(Object player) {
+        if (!(player instanceof AudioTrack)) {
+            return "";
+        }
+        int[] channel = channelOf((AudioTrack) player);
+        return " [content " + channel[0] + " stream " + channel[1] + " usage " + channel[2] + "]";
+    }
+
+    /**
+     * Whether the samples of this track are the only lever its output leaves us. A BYD channel is
+     * named either in the content type or in the legacy stream type; a channel this module was
+     * asked to force counts too, so a track whose attributes the ROM will not show still gets the
+     * lever that was proven to work on it.
+     */
     private static boolean samplesInsteadOfVolume(Object player) {
-        return player instanceof AudioTrack && factor() < 1f && bydChannel();
+        return player instanceof AudioTrack && factor() < 1f && bydOutput((AudioTrack) player);
+    }
+
+    private static boolean bydOutput(AudioTrack track) {
+        int[] channel = channelOf(track);
+        if (channel[0] >= BYD_FIRST_CONTENT || channel[1] >= BYD_FIRST_STREAM) {
+            return true;
+        }
+        return channel[0] < 0 && channel[1] < 0 && bydChannel();
+    }
+
+    /**
+     * The content type, legacy stream type and usage of a track, in that order, with -1 wherever
+     * the framework will not say. A track's channel never changes once it exists, so this is read
+     * once and remembered.
+     */
+    private static int[] channelOf(AudioTrack track) {
+        int[] known = CHANNELS.get(track);
+        if (known != null) {
+            return known;
+        }
+        int content = -1;
+        int usage = -1;
+        try {
+            AudioAttributes attributes = track.getAudioAttributes();
+            if (attributes != null) {
+                content = attributes.getContentType();
+                usage = attributes.getUsage();
+            }
+        } catch (Throwable t) {
+            XposedBridge.log(TAG + ": " + packageName + " track attributes unreadable: " + t);
+        }
+        int stream = -1;
+        try {
+            stream = track.getStreamType();
+        } catch (Throwable t) {
+            XposedBridge.log(TAG + ": " + packageName + " track stream unreadable: " + t);
+        }
+        int[] channel = {content, stream, usage};
+        CHANNELS.put(track, channel);
+        return channel;
     }
 
     /**
