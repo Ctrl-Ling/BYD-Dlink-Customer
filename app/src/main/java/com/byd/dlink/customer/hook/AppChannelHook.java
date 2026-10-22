@@ -71,9 +71,13 @@ public class AppChannelHook {
     }
 
     /**
-     * Media playback is the only thing re-channeled. Attributes describing a notification, an alarm
-     * or a microphone have no business arriving on the navigation output, and a channel the app
-     * picked deliberately is left as it chose it.
+     * Media playback is the only thing re-channeled: attributes describing a notification, an alarm
+     * or a microphone have no business arriving on the navigation output.
+     *
+     * A channel the app chose itself is overwritten too, because that is what a configured channel
+     * asks for. It matters more on this ROM than it sounds like it should: the map's guidance voice
+     * arrives already carrying BYD's navigation content type, so a rule that left an app's own choice
+     * alone silently made the setting do nothing at all.
      */
     private static void forceChannel(AudioAttributes attributes) {
         if (attributes == null) {
@@ -86,10 +90,6 @@ public class AppChannelHook {
         int usage = read(usageField, attributes);
         int content = read(contentTypeField, attributes);
         if (usage != AudioAttributes.USAGE_MEDIA) {
-            return;
-        }
-        if (content != AudioAttributes.CONTENT_TYPE_UNKNOWN
-                && content != AudioAttributes.CONTENT_TYPE_MUSIC) {
             return;
         }
         if (content == channel || contentTypeField == null) {
