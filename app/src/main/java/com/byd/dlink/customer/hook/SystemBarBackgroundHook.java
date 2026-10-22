@@ -2,6 +2,8 @@ package com.byd.dlink.customer.hook;
 
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
@@ -37,6 +39,8 @@ public class SystemBarBackgroundHook {
     private static final String STATUS_BAR_CLASS = "com.android.systemui.statusbar.phone.StatusBar";
     private static final String NAV_CONTROLLER_CLASS =
             "com.android.systemui.statusbar.phone.navigationbar.CustomNavigationBarController";
+    // system_server's way of telling SystemUI that a window transition has landed on the display.
+    private static final String COMMAND_QUEUE_CLASS = "com.android.systemui.statusbar.CommandQueue";
     private static final String STATUS_BAR_VIEW = "status_bar";
     private static final String NAV_BAR_VIEW = "byd_custom_nav_bar";
     // Dlink 3.0/4.0 has no BYD nav container at all: the keys are stock KeyButtonViews laid out by
@@ -56,6 +60,9 @@ public class SystemBarBackgroundHook {
 
     /** How many rows of screen a bar's edge colour is read from. */
     private static final int EDGE_ROWS = 2;
+
+    /** The thread the bars are drawn on; a transition is reported to us on a binder thread. */
+    private static final Handler sMain = new Handler(Looper.getMainLooper());
 
     // What each band is showing because we painted it. Null means the app owns that band, which is
     // both the answer to "may we colour the icons on it" and the colour to judge them against.
@@ -164,6 +171,48 @@ public class SystemBarBackgroundHook {
             XposedBridge.log(TAG + ": bar background visibility hook not installed: " + t);
         }
         hookTopApp(lpparam.classLoader);
+        hookTransition(lpparam.classLoader);
+    }
+
+    /**
+     * The moment the screen the bars have to match is actually on the display.
+     *
+     * Both events that name a new app -- BYD's package report and the visibility flags -- arrive
+     * before the incoming window is composited, so a colour read off the screen at that moment is the
+     * *outgoing* screen's. Measured on this fork: opening this module over a black launcher decided
+     * black for both bars when the module's own edges are blue and white, and going back to that same
+     * black launcher decided its blue and white. Each app wore the colour of the one it replaced, and
+     * the package dedupe that keeps one app from reading the display twice then held that answer until
+     * the next switch. A transition finishing is the one report that means the new frame has landed,
+     * so the colour is asked of it again there.
+     *
+     * The bars are not laid out by a transition ending, so the decision is taken here rather than
+     * armed for a layout that may never come.
+     */
+    private static void hookTransition(ClassLoader classLoader) {
+        XC_MethodHook callback = new XC_MethodHook() {
+            @Override
+            protected void afterHookedMethod(MethodHookParam param) {
+                if (!needsSampling()) {
+                    return;
+                }
+                sMain.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        apply();
+                    }
+                });
+            }
+        };
+        try {
+            Class<?> queue = XposedHelpers.findClass(COMMAND_QUEUE_CLASS, classLoader);
+            // Every overload is asked: the argument list is this fork's, and guessing it is how a
+            // hook point silently stops covering the case it was added for.
+            XposedBridge.hookAllMethods(queue, "appTransitionFinished", callback);
+            XposedBridge.log(TAG + ": bar transition hook installed");
+        } catch (Throwable t) {
+            XposedBridge.log(TAG + ": bar transition hook not installed: " + t);
+        }
     }
 
     /**
