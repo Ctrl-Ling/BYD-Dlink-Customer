@@ -89,9 +89,6 @@ public class ScreenCornerHook {
         /** Per axis, so a pixel's coverage is known to better than one grey level. */
         private static final int SAMPLES = 8;
 
-        /** 2 is a circle; 4 flattens the arc against both screen edges, which is the look he picked. */
-        private static final double EXPONENT = 4;
-
         private final Bitmap mCorner;
         private final Paint mPaint = new Paint();
         private final Matrix mMirror = new Matrix();
@@ -112,52 +109,26 @@ public class ScreenCornerHook {
          * One corner, the top-left, as the fraction of each pixel that falls outside the arc. The
          * other three are this one mirrored, which is why a single bitmap covers the whole screen
          * and why the arc stays tangent to both screen edges however the bars are laid out.
-         *
-         * The last pass averages each pixel with its neighbours, which is what carries the end of
-         * the arc out to nothing instead of leaving it to stop on a pixel boundary.
          */
         private static Bitmap build(int radius) {
-            double[] coverage = sample(radius);
             int[] pixels = new int[radius * radius];
-            for (int y = 0; y < radius; y++) {
-                for (int x = 0; x < radius; x++) {
-                    double sum = 0;
-                    for (int j = -1; j <= 1; j++) {
-                        for (int i = -1; i <= 1; i++) {
-                            sum += coverage[edge(coverage, radius, y + j, x + i)];
-                        }
-                    }
-                    pixels[y * radius + x] = (int) Math.round(sum * 255 / 9) << 24;
-                }
-            }
-            return Bitmap.createBitmap(pixels, radius, radius, Bitmap.Config.ARGB_8888);
-        }
-
-        /** How much of each pixel lies outside the arc through it. */
-        private static double[] sample(int radius) {
-            double[] coverage = new double[radius * radius];
-            double r = radius, corner = Math.pow(radius, EXPONENT);
+            double r2 = (double) radius * radius;
             for (int y = 0; y < radius; y++) {
                 for (int x = 0; x < radius; x++) {
                     int outside = 0;
                     for (int j = 0; j < SAMPLES; j++) {
-                        double dy = Math.pow(r - (y + (j + 0.5) / SAMPLES), EXPONENT);
+                        double dy = radius - (y + (j + 0.5) / SAMPLES);
                         for (int i = 0; i < SAMPLES; i++) {
-                            if (Math.pow(r - (x + (i + 0.5) / SAMPLES), EXPONENT) + dy > corner) {
+                            double dx = radius - (x + (i + 0.5) / SAMPLES);
+                            if (dx * dx + dy * dy > r2) {
                                 outside++;
                             }
                         }
                     }
-                    coverage[y * radius + x] = (double) outside / (SAMPLES * SAMPLES);
+                    pixels[y * radius + x] = (outside * 255 + SAMPLES * SAMPLES / 2) / (SAMPLES * SAMPLES) << 24;
                 }
             }
-            return coverage;
-        }
-
-        private static int edge(double[] coverage, int radius, int y, int x) {
-            int row = y < 0 ? 0 : y >= radius ? radius - 1 : y;
-            int column = x < 0 ? 0 : x >= radius ? radius - 1 : x;
-            return row * radius + column;
+            return Bitmap.createBitmap(pixels, radius, radius, Bitmap.Config.ARGB_8888);
         }
 
         @Override
