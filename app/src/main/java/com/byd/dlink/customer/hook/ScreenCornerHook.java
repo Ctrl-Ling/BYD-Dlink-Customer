@@ -1,13 +1,11 @@
 package com.byd.dlink.customer.hook;
 
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.ColorFilter;
+import android.graphics.Matrix;
 import android.graphics.Paint;
-import android.graphics.Path;
 import android.graphics.PixelFormat;
-import android.graphics.Rect;
-import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.view.View;
 
@@ -19,7 +17,7 @@ import java.util.Map;
 
 /**
  * Rounds the screen by drawing the corners the panel does not have. The display is a rectangle, so
- * the only thing that can read as a rounded corner is a bar of bezel colour outside an arc -- and
+ * the only thing that can read as a rounded corner is a bar of bezel black outside an arc -- and
  * the two bar bands are exactly the views that already sit in all four corners.
  *
  * The mask goes on as each bar's foreground, which is drawn above its background and its icons
@@ -27,9 +25,6 @@ import java.util.Map;
  * is opaque only where a bar has no business drawing anyway.
  */
 public class ScreenCornerHook {
-
-    /** The colour outside the arc: the bezel this panel pretends to have. */
-    private static final int BEZEL = Color.BLACK;
 
     // What each bar carried before we put a mask on it, so standing down gives back exactly that,
     // including the usual case of it having carried nothing.
@@ -81,20 +76,29 @@ public class ScreenCornerHook {
         bar.setForeground(new CornerMask(radius, top));
     }
 
-    /** The two corners of one band that touch the edge of the screen, filled outside a quarter arc. */
+    /**
+     * The two corners of one band that touch the edge of the screen, filled outside a quarter arc.
+     *
+     * The arc is a pre-computed bitmap rather than a {@link Path}: a hardware canvas tessellates a
+     * filled path into chords, and at the radii this panel can carry -- ten pixels across -- the
+     * chords are what the eye catches. Sampling the coverage once, when the radius changes, gives
+     * every pixel its exact share of bezel and leaves nothing for the tessellator to approximate.
+     */
     private static final class CornerMask extends Drawable {
 
-        private final Path mLeft = new Path();
-        private final Path mRight = new Path();
-        private final Paint mPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final RectF mArc = new RectF();
+        /** Per axis, so a pixel's coverage is known to better than one grey level. */
+        private static final int SAMPLES = 8;
+
+        private final Bitmap mCorner;
+        private final Paint mPaint = new Paint();
+        private final Matrix mMirror = new Matrix();
         private final int mRadius;
         private final boolean mTop;
 
         CornerMask(int radius, boolean top) {
             mRadius = radius;
             mTop = top;
-            mPaint.setColor(BEZEL);
+            mCorner = build(radius);
         }
 
         boolean shows(int radius, boolean top) {
@@ -102,52 +106,48 @@ public class ScreenCornerHook {
         }
 
         /**
-         * Built once per size rather than per frame: a band lays out with the screen, and a path
-         * rebuilt on every draw would cost the main thread for no visible difference.
-         *
-         * Each corner is traced as its own closed piece -- edge, arc, edge -- rather than cut out
-         * of the band with a boolean path op: {@link Path#op} answers false and leaves the operand
-         * untouched when it cannot do the subtraction, and an untouched full rect paints the whole
-         * bar black.
+         * One corner, the top-left, as the fraction of each pixel that falls outside the arc. The
+         * other three are this one mirrored, which is why a single bitmap covers the whole screen
+         * and why the arc stays tangent to both screen edges however the bars are laid out.
          */
-        @Override
-        protected void onBoundsChange(Rect bounds) {
-            mLeft.reset();
-            mRight.reset();
-            int width = bounds.width();
-            int height = bounds.height();
-            if (width <= 0 || height <= 0) {
-                return;
+        private static Bitmap build(int radius) {
+            int[] pixels = new int[radius * radius];
+            double r2 = (double) radius * radius;
+            for (int y = 0; y < radius; y++) {
+                for (int x = 0; x < radius; x++) {
+                    int outside = 0;
+                    for (int j = 0; j < SAMPLES; j++) {
+                        double dy = radius - (y + (j + 0.5) / SAMPLES);
+                        for (int i = 0; i < SAMPLES; i++) {
+                            double dx = radius - (x + (i + 0.5) / SAMPLES);
+                            if (dx * dx + dy * dy > r2) {
+                                outside++;
+                            }
+                        }
+                    }
+                    pixels[y * radius + x] = (outside * 255 + SAMPLES * SAMPLES / 2) / (SAMPLES * SAMPLES) << 24;
+                }
             }
-            int r = Math.min(mRadius, height);
-            mLeft.moveTo(r, 0);
-            mArc.set(0, 0, 2 * r, 2 * r);
-            mLeft.arcTo(mArc, 270, -90);
-            mLeft.lineTo(0, 0);
-            mLeft.close();
-            mRight.moveTo(width - r, 0);
-            mArc.set(width - 2 * r, 0, width, 2 * r);
-            mRight.arcTo(mArc, 270, 90);
-            mRight.lineTo(width, 0);
-            mRight.close();
+            return Bitmap.createBitmap(pixels, radius, radius, Bitmap.Config.ARGB_8888);
         }
 
         @Override
         public void draw(Canvas canvas) {
-            if (mLeft.isEmpty() || mRight.isEmpty()) {
-                return;
-            }
-            if (mTop) {
-                canvas.drawPath(mLeft, mPaint);
-                canvas.drawPath(mRight, mPaint);
-                return;
-            }
-            // The same paths seen from the other edge, so the arcs land on the bottom two corners.
+            int width = getBounds().width();
+            int height = getBounds().height();
             canvas.save();
-            canvas.translate(0, getBounds().height());
-            canvas.scale(1, -1);
-            canvas.drawPath(mLeft, mPaint);
-            canvas.drawPath(mRight, mPaint);
+            if (mTop) {
+                canvas.drawBitmap(mCorner, 0, 0, mPaint);
+            } else {
+                // The same corner seen from the other edge, so the arcs land on the bottom two.
+                canvas.translate(0, height);
+                canvas.scale(1, -1);
+                canvas.drawBitmap(mCorner, 0, 0, mPaint);
+            }
+            mMirror.reset();
+            mMirror.postTranslate(width, 0);
+            mMirror.preScale(-1, 1);
+            canvas.drawBitmap(mCorner, mMirror, mPaint);
             canvas.restore();
         }
 
