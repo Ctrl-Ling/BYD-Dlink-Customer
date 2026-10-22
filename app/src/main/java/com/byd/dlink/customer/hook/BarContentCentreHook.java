@@ -1,13 +1,13 @@
 package com.byd.dlink.customer.hook;
 
+import android.graphics.Rect;
+import android.text.Layout;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import android.widget.TextView;
 
 import com.byd.dlink.customer.utils.PrefsManager;
-
-import java.util.HashSet;
-import java.util.Set;
 
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
@@ -37,9 +37,9 @@ public class BarContentCentreHook {
             "status_bar",
     };
     // Dlink 3.0/4.0 without the 4.5 UI module names its bars differently again, and what sits
-    // inside them keeps the stock 48px/90px geometry rather than the resized bar.
+    // inside them keeps the stock 48px/90px geometry rather than the resized bar. The clock cluster
+    // is hooked by name through BAR_CONTAINERS; this is the nav bar's own container.
     private static final String[] DLINK34_BAR_CONTAINERS = {
-            "status_bar_container",
             "nav_buttons",
     };
     private static final int MAX_DEPTH = 12;
@@ -55,8 +55,6 @@ public class BarContentCentreHook {
     // Counted across one walk, reset by the layout pass that starts it; the main thread is the only
     // one that lays views out, so no guard is needed between passes.
     private static int sViews;
-    private static int sMoved;
-    private static final Set<String> sWalked = new HashSet<String>();
 
     public static void init(XC_LoadPackage.LoadPackageParam lpparam) {
         if (!SYSTEM_UI_PACKAGE.equals(lpparam.packageName)
@@ -81,18 +79,12 @@ public class BarContentCentreHook {
                             if (bar.getWidth() < 600) {
                                 return;
                             }
-                            String root = barContainerName(bar);
-                            if (root == null) {
+                            if (!isBarContainer(bar)) {
                                 return;
                             }
                             if (sContentFillsBar) {
                                 sViews = 0;
-                                sMoved = 0;
-                                centreInsideParent(bar, 0);
-                                if (sWalked.add(root)) {
-                                    XposedBridge.log(TAG + ": centring walked " + root
-                                            + " views=" + sViews + " moved=" + sMoved);
-                                }
+                                centreInsideParent(bar, 0, bar.getHeight());
                             } else {
                                 centreOverflow(bar, 0);
                             }
@@ -105,19 +97,22 @@ public class BarContentCentreHook {
         }
     }
 
-    private static String barContainerName(View view) {
+    private static boolean isBarContainer(View view) {
+        String name = entryName(view);
+        return name != null && (contains(BAR_CONTAINERS, name)
+                || sContentFillsBar && contains(DLINK34_BAR_CONTAINERS, name));
+    }
+
+    private static String entryName(View view) {
         int id = view.getId();
         if (id == 0) {
             return null;
         }
-        String name;
         try {
-            name = view.getResources().getResourceEntryName(id);
+            return view.getResources().getResourceEntryName(id);
         } catch (Throwable t) {
             return null;
         }
-        return contains(BAR_CONTAINERS, name)
-                || sContentFillsBar && contains(DLINK34_BAR_CONTAINERS, name) ? name : null;
     }
 
     private static boolean contains(String[] names, String name) {
@@ -136,7 +131,7 @@ public class BarContentCentreHook {
      * Absolute, never additive -- onLayout runs again on every pass, and the layout position this
      * reads does not move with the translation it writes.
      */
-    private static void centreInsideParent(ViewGroup parent, int depth) {
+    private static void centreInsideParent(ViewGroup parent, int depth, int barHeight) {
         if (depth >= MAX_DEPTH || sViews >= MAX_VIEWS) {
             return;
         }
@@ -151,18 +146,76 @@ public class BarContentCentreHook {
             if (height <= 0 || child.getVisibility() != View.VISIBLE) {
                 continue;
             }
+            if (!isBarContent(child, height, barHeight)) {
+                continue;
+            }
             if (++sViews > MAX_VIEWS) {
                 return;
             }
-            float delta = (available - height) / 2f - (child.getTop() - contentTop);
-            if (Math.abs(delta) > CENTRE_TOLERANCE) {
-                child.setTranslationY(delta);
-                sMoved++;
+            float wanted = (available - height) / 2f - (child.getTop() - contentTop);
+            if (child instanceof TextView) {
+                wanted += fitLabel((TextView) child, parent);
             }
-            if (child instanceof ViewGroup) {
-                centreInsideParent((ViewGroup) child, depth + 1);
+            // Compared against the translation the view already carries, not against zero. A pass
+            // that ran while this container still measured the stock bar leaves a shift behind;
+            // the resized pass asks for nothing and would leave that shift to be drawn forever.
+            if (Math.abs(wanted - child.getTranslationY()) > CENTRE_TOLERANCE) {
+                child.setTranslationY(wanted);
+            }
+            if (child instanceof ViewGroup && height <= barHeight) {
+                centreInsideParent((ViewGroup) child, depth + 1, barHeight);
             }
         }
+    }
+
+    /**
+     * What overhangs the strip is not bar content, so it is neither moved nor walked into. The
+     * pull-down shade hangs off the same containers as the bars' icons -- notification rows of eight
+     * hundred pixels centred inside a sixty pixel strip read as the shade sliding off screen -- and
+     * the one thing that legitimately measures more than the bar is the label whose line this hook
+     * just grew out of a box the stock bar was sized for.
+     */
+    private static boolean isBarContent(View child, int height, int barHeight) {
+        if (height <= barHeight) {
+            return true;
+        }
+        if (!(child instanceof TextView)) {
+            return false;
+        }
+        Layout layout = ((TextView) child).getLayout();
+        return layout != null && layout.getLineCount() == 1;
+    }
+
+    /**
+     * Look after one label inside a bar, and answer how far it has to move for its letters rather
+     * than its box to sit in the middle.
+     *
+     * A label clipped to its own height cannot be fixed by moving it: a TextView cuts its text at
+     * its own bottom no matter what the parent's clipping says, so the air-conditioning state --
+     * 73px of line in the 47px the shrunk bar leaves -- reads as sliced off wherever it is placed.
+     * It gets the height its line needs first, and the container is allowed to let it overhang.
+     */
+    private static float fitLabel(TextView text, ViewGroup parent) {
+        Layout layout = text.getLayout();
+        String value = text.getText().toString();
+        if (layout == null || layout.getLineCount() != 1 || value.isEmpty()) {
+            return 0;
+        }
+        int needed = layout.getHeight() + text.getPaddingTop() + text.getPaddingBottom()
+                + text.getExtendedPaddingTop() + text.getExtendedPaddingBottom();
+        if (text.getHeight() < needed) {
+            ViewGroup.LayoutParams params = text.getLayoutParams();
+            parent.setClipChildren(false);
+            if (params.height != needed) {
+                params.height = needed;
+                text.requestLayout();
+            }
+        }
+        Rect ink = new Rect();
+        text.getPaint().getTextBounds(value, 0, value.length(), ink);
+        float baseline = text.getPaddingTop() + text.getExtendedPaddingTop()
+                + layout.getLineBaseline(0);
+        return text.getHeight() / 2f - (baseline + (ink.top + ink.bottom) / 2f);
     }
 
     private static void centreOverflow(ViewGroup parent, int depth) {

@@ -149,6 +149,9 @@ public class ViewTreeDump {
         if (lp != null) {
             sb.append(" winGravity=").append(lp.gravity);
         }
+        if (view instanceof android.widget.TextView) {
+            sb.append(textOf((android.widget.TextView) view));
+        }
         XposedBridge.log(TAG + ": view " + sb);
         if (!(view instanceof ViewGroup)) {
             return;
@@ -157,6 +160,32 @@ public class ViewTreeDump {
         for (int i = 0; i < group.getChildCount(); i++) {
             describe(window + '/' + group.getChildCount(), group.getChildAt(i));
         }
+    }
+    /**
+     * Where a label's own box puts its line: the gravity it carries and the line it laid out.
+     * Together they say whether low letters come from the gravity, the font padding, or the box.
+     */
+    private static String textOf(android.widget.TextView text) {
+        StringBuilder sb = new StringBuilder(" grv=0x")
+                .append(Integer.toHexString(text.getGravity()))
+                .append(" txt=").append(text.getText());
+        android.text.Layout layout = text.getLayout();
+        if (layout == null || layout.getLineCount() == 0) {
+            return sb.append(" line=-").toString();
+        }
+        int last = layout.getLineCount() - 1;
+        android.graphics.Rect ink = new android.graphics.Rect();
+        String value = text.getText().toString();
+        if (!value.isEmpty()) {
+            text.getPaint().getTextBounds(value, 0, value.length(), ink);
+        }
+        return sb.append(" line=").append(layout.getLineTop(0)).append(',')
+                .append(layout.getLineBottom(last))
+                .append(" base=").append(layout.getLineBaseline(0))
+                .append(" lh=").append(layout.getHeight())
+                .append(" ext=").append(text.getExtendedPaddingTop()).append(',')
+                .append(text.getExtendedPaddingBottom())
+                .append(" ink=").append(ink.top).append(',').append(ink.bottom).toString();
     }
 
     private static String drawableOf(View view) {
