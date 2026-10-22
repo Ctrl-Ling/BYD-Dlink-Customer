@@ -21,10 +21,14 @@
             android:name="xposedscope"
             android:resource="@array/xposed_scope" />
 
+        <!-- One instance for two entry points: the alias and this activity carry different
+             components, so a plain standard launch stacks a fresh copy and rebuilds the page. -->
         <activity
             android:name=".SettingsActivity"
+            android:configChanges="uiMode|orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden"
             android:exported="true"
-            android:label="@string/app_name">
+            android:label="@string/app_name"
+            android:launchMode="singleTask">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="de.robv.android.xposed.category.MODULE_SETTINGS" />
