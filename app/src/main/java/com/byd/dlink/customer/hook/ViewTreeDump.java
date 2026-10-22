@@ -123,6 +123,7 @@ public class ViewTreeDump {
                 .append(" id=").append(idName(view))
                 .append(" pos=").append(xy[0]).append(',').append(xy[1])
                 .append(" size=").append(view.getWidth()).append('x').append(view.getHeight())
+                .append(" ty=").append(view.getTranslationY())
                 .append(" pad=").append(view.getPaddingLeft()).append(',')
                 .append(view.getPaddingTop()).append(',')
                 .append(view.getPaddingRight()).append(',')

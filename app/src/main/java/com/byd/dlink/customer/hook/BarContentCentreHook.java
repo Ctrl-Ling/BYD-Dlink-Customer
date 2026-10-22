@@ -6,6 +6,9 @@ import android.widget.FrameLayout;
 
 import com.byd.dlink.customer.utils.PrefsManager;
 
+import java.util.HashSet;
+import java.util.Set;
+
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
@@ -52,6 +55,8 @@ public class BarContentCentreHook {
     // Counted across one walk, reset by the layout pass that starts it; the main thread is the only
     // one that lays views out, so no guard is needed between passes.
     private static int sViews;
+    private static int sMoved;
+    private static final Set<String> sWalked = new HashSet<String>();
 
     public static void init(XC_LoadPackage.LoadPackageParam lpparam) {
         if (!SYSTEM_UI_PACKAGE.equals(lpparam.packageName)
@@ -73,12 +78,21 @@ public class BarContentCentreHook {
                             // A resource-name lookup on every FrameLayout in SystemUI would be
                             // paid by every tile and button in the panel; the bars are the only
                             // ones that span the screen.
-                            if (bar.getWidth() < 600 || !isBarContainer(bar)) {
+                            if (bar.getWidth() < 600) {
+                                return;
+                            }
+                            String root = barContainerName(bar);
+                            if (root == null) {
                                 return;
                             }
                             if (sContentFillsBar) {
                                 sViews = 0;
+                                sMoved = 0;
                                 centreInsideParent(bar, 0);
+                                if (sWalked.add(root)) {
+                                    XposedBridge.log(TAG + ": centring walked " + root
+                                            + " views=" + sViews + " moved=" + sMoved);
+                                }
                             } else {
                                 centreOverflow(bar, 0);
                             }
@@ -91,19 +105,19 @@ public class BarContentCentreHook {
         }
     }
 
-    private static boolean isBarContainer(View view) {
+    private static String barContainerName(View view) {
         int id = view.getId();
         if (id == 0) {
-            return false;
+            return null;
         }
         String name;
         try {
             name = view.getResources().getResourceEntryName(id);
         } catch (Throwable t) {
-            return false;
+            return null;
         }
         return contains(BAR_CONTAINERS, name)
-                || sContentFillsBar && contains(DLINK34_BAR_CONTAINERS, name);
+                || sContentFillsBar && contains(DLINK34_BAR_CONTAINERS, name) ? name : null;
     }
 
     private static boolean contains(String[] names, String name) {
@@ -143,6 +157,7 @@ public class BarContentCentreHook {
             float delta = (available - height) / 2f - (child.getTop() - contentTop);
             if (Math.abs(delta) > CENTRE_TOLERANCE) {
                 child.setTranslationY(delta);
+                sMoved++;
             }
             if (child instanceof ViewGroup) {
                 centreInsideParent((ViewGroup) child, depth + 1);
