@@ -44,7 +44,7 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
  * for a colour once, when the item is bound, before SystemUI has settled which app owns the screen, so a
  * decision taken there would otherwise be the only one ever taken. Most of the nav bar never asks again
  * at all -- measured, a whole boot produced one colour call for it -- so that re-decision walks the
- * views inside the bar instead of waiting to be called, which is {@link #pullNavInk()}.
+ * views inside the bar instead of waiting to be called, which is {@link #pullBarInk(int)}.
  */
 public class BarIconColourHook {
 
@@ -54,13 +54,26 @@ public class BarIconColourHook {
             "com.android.systemui.statusbar.phone.DarkIconDispatcherImpl";
     private static final String BASE_NAVI_ITEM =
             "com.android.systemui.statusbar.phone.navigationbar.items.BaseNaviItem";
-    private static final String NAV_ICON_DAY = "nav_bar_icon_day";
-    private static final String NAV_ICON_NIGHT = "nav_bar_icon_night";
+    // The two ink colours each bar ships with, by name. Which names those are is a per-fork question
+    // -- the newer panels name them after the nav bar, Dlink 3.0/4.0 after the air-conditioning
+    // readout the keys and the temperature labels share -- so each bar is asked of a list, first pair
+    // found wins. The values are what gets judged, never the names.
+    private static final String[] NAV_INK_NAMES = {
+            "nav_bar_icon_day", "nav_bar_icon_night",
+            "byd_nav_bar_temp_color", "byd_nav_bar_temp_color_night",
+    };
+    private static final String[] STATUS_INK_NAMES = {
+            "byd_status_bar_color", "byd_status_bar_color_night",
+    };
     private static final String NAV_COLOR_METHOD = "updateLottieAnimationView";
     private static final String KEY_ITEM_ICON = "mNaviItemIcon";
     private static final String KEY_ORIGINAL_APP_ICON = "mUsingOriginalAppIcon";
     private static final String STATUS_BAR_VIEW = "status_bar";
     private static final String NAV_BAR_VIEW = "byd_custom_nav_bar";
+    // Dlink 3.0/4.0 has no BYD container to name: its keys are stock KeyButtonViews, and the nav
+    // window's own frame is the view they all hang off. Deeper on the newer panels, where the name
+    // above is met first, so this one only ever answers for 3.0/4.0.
+    private static final String NAV_BAR_VIEW_34 = "navigation_bar_frame";
 
     /**
      * How far a colour may stray from grey and still count as bar ink. BYD's own icon greys sit well
@@ -102,16 +115,18 @@ public class BarIconColourHook {
     private static final Set<Class<?>> sOverrideAttempts =
             Collections.synchronizedSet(new HashSet<Class<?>>());
 
-    private static int sDayId;
-    private static int sNightId;
+    // Each bar's {day, night} ink ids, resolved from the name pairs above the first time a walk needs
+    // them, and {0, 0} once it is known this fork names neither.
+    private static int[] sNavInkPair;
+    private static int[] sStatusInkPair;
 
     // Cache for hasOwnOrParentBackground() results - view backgrounds rarely change
     private static final Map<View, Boolean> sBackgroundCache =
             Collections.synchronizedMap(new WeakHashMap<View, Boolean>());
 
-    // Cache for isPictureIcon() results - a bitmap's coverage never changes once it is drawn with
-    private static final Map<Drawable, Boolean> sPictureCache =
-            Collections.synchronizedMap(new WeakHashMap<Drawable, Boolean>());
+    // Cache for analyse() results - a bitmap's coverage and colour never change once it is drawn with
+    private static final Map<Drawable, int[]> sAssetInk =
+            Collections.synchronizedMap(new WeakHashMap<Drawable, int[]>());
 
     // Cache for inkOf() results - ImageView color filters rarely change
     private static final Map<ImageView, Integer> sInkCache =
@@ -223,7 +238,7 @@ public class BarIconColourHook {
      * buttons the owner chooses to put in. These two framework calls are where the recolouring happens
      * when BYD decides one on its own, e.g. the moment an air-conditioning key is pressed: rewriting the
      * argument keeps that in step with the band without a flash of the wrong tone first. What BYD decides
-     * once and never revisits is covered by {@link #pullNavInk()} instead.
+     * once and never revisits is covered by {@link #pullBarInk(int)} instead.
      *
      * Neutral colours only. A saturated one is BYD telling the user something -- the blue of the active
      * nav item, the HI/LO temperature accents -- and a band judgement must not overrule that. The alpha
@@ -240,7 +255,8 @@ public class BarIconColourHook {
                 if (barOf(view) != BAR_NAV || !isInk(requested)) {
                     return;
                 }
-                if (view instanceof ImageView && isPictureIcon((ImageView) view)) {
+                if (view instanceof ImageView
+                        && isPictureIcon(((ImageView) view).getDrawable())) {
                     param.setResult(null);
                     return;
                 }
@@ -269,25 +285,22 @@ public class BarIconColourHook {
      *
      * Nothing is assumed about which family a view belongs to, which is the point -- the bar is
      * user-rearrangeable, and the buttons in it are only limited by what the owner chooses to put there.
+     * Dlink 3.0/4.0 needs it for both bars: its status bar is BYD's own clock and air-conditioning
+     * readout, coloured while it was inflated, and the ROM's dark-icon tint reaches none of it.
      */
-    private static void pullNavInk() {
-        View bar = SystemBarBackgroundHook.navBarView();
-        Integer band = bandOf(BAR_NAV);
-        if (bar == null || band == null) {
+    private static void pullBarInk(int bar) {
+        View content = bar == BAR_NAV ? SystemBarBackgroundHook.navBarView()
+                : SystemBarBackgroundHook.statusBarView();
+        Integer band = bandOf(bar);
+        if (content == null || band == null) {
             return;
         }
-        // Clear caches before walking - view tree may have changed
-        sBackgroundCache.clear();
-        sInkCache.clear();
-        sInkIdCache.clear();
-        sBandJudgeCache.clear();
-
-        Resources resources = bar.getResources();
-        int id = inkId(resources, band.intValue());
+        Resources resources = content.getResources();
+        int id = inkId(resources, band.intValue(), bar);
         if (id == 0) {
             return;
         }
-        pullInk(bar, band.intValue(), resources.getColor(id));
+        pullInk(content, band.intValue(), resources.getColor(id));
     }
 
     /**
@@ -310,14 +323,15 @@ public class BarIconColourHook {
                 return;
             }
             ImageView image = (ImageView) icon;
-            if (isPictureIcon(image)) {
-                int current = inkOf(image);
+            Drawable drawn = image.getDrawable();
+            if (isPictureIcon(drawn)) {
+                int current = inkOf(image, drawn);
                 if (current != 0 && isInk(current)) {
                     image.setColorFilter((ColorFilter) null);
                 }
                 return;
             }
-            if (inkOf(image) == 0) {
+            if (inkOf(image, drawn) == 0) {
                 image.setColorFilter(target);
             }
         } catch (Throwable t) {
@@ -340,10 +354,11 @@ public class BarIconColourHook {
             }
         } else if (view instanceof ImageView) {
             ImageView image = (ImageView) view;
-            if (!isPictureIcon(image) && !hasOwnOrParentBackground(image)) {
-                Integer ink = betterInk(inkOf(image), band, target);
+            Drawable drawn = image.getDrawable();
+            if (!isPictureIcon(drawn) && !hasOwnOrParentBackground(image)) {
+                Integer ink = betterInk(inkOf(image, drawn), band, target);
                 if (ink != null) {
-                    image.setColorFilter(ink);
+                    paintIcon(image, drawn, ink.intValue());
                 }
             }
         }
@@ -356,37 +371,73 @@ public class BarIconColourHook {
     }
 
     /**
+     * Hand the icon its ink through both mechanisms an image view can draw with, asked of the view
+     * rather than of the drawable so a later asset swap carries them over: {@code ImageView} re-applies
+     * its tint list to whatever drawable arrives but not its colour filter. The tint is the one with the
+     * last word -- measured on Dlink 3.0/4.0, a key whose view carries a light colour filter paints the
+     * dark colour of its own tint -- and the filter is what the ROM's own keys and every icon without a
+     * tint are set through.
+     */
+    private static void paintIcon(ImageView image, Drawable drawn, int ink) {
+        if (image.getImageTintList() != null || (drawn != null && tintOf(drawn) != null)) {
+            image.setImageTintList(ColorStateList.valueOf(ink));
+        }
+        image.setColorFilter(ink);
+    }
+
+    /**
      * Whether an image draws from a bitmap that carries the message in its artwork rather than in its
      * shape -- a filled tile with detail inside it, the way BYD draws the app-list key and every real
      * app icon. Coverage tells the two apart: a glyph is a few strokes over a transparent field, a
      * picture is nearly all ink. Flattening the second to one bar colour erases what it depicts, so it
      * is left to draw itself, the same way an item flagged as showing its original app icon is.
      */
-    private static boolean isPictureIcon(ImageView image) {
-        Drawable drawable = image.getDrawable();
-        if (!(drawable instanceof BitmapDrawable)) {
-            return false;
-        }
-        Boolean cached = sPictureCache.get(drawable);
+    private static boolean isPictureIcon(Drawable drawable) {
+        return drawable instanceof BitmapDrawable && analyse((BitmapDrawable) drawable)[0] == 1;
+    }
+
+    /**
+     * What an asset paints, read off the asset: how much of its own box it covers, and the colour of
+     * what it covers with. Coverage tells a glyph from a picture; the colour is the ink an icon with no
+     * filter and no tint of its own is drawn with, which is the only answer BYD's Dlink 3.0/4.0 keys
+     * give -- they carry a light tint nobody applies and a dark asset that is what reaches the screen.
+     *
+     * @return {@code {fills its box? 1 : 0, average colour, or 0 when that colour is one of BYD's
+     *         meaning-carrying ones rather than bar ink}}
+     */
+    private static int[] analyse(BitmapDrawable drawable) {
+        int[] cached = sAssetInk.get(drawable);
         if (cached != null) {
             return cached;
         }
-        boolean picture = false;
-        Bitmap bitmap = ((BitmapDrawable) drawable).getBitmap();
+        int[] result = new int[]{0, 0};
+        Bitmap bitmap = drawable.getBitmap();
         if (bitmap != null && !bitmap.isRecycled()) {
             int[] pixels = new int[bitmap.getWidth() * bitmap.getHeight()];
             bitmap.getPixels(pixels, 0, bitmap.getWidth(), 0, 0,
                     bitmap.getWidth(), bitmap.getHeight());
             int covered = 0;
+            long weight = 0, red = 0, green = 0, blue = 0;
             for (int i = 0; i < pixels.length; i++) {
-                if ((pixels[i] >>> 24) >= 0x20) {
-                    covered++;
+                int alpha = pixels[i] >>> 24;
+                if (alpha < 0x20) {
+                    continue;
                 }
+                covered++;
+                weight += alpha;
+                red += (long) (pixels[i] >> 16 & 0xff) * alpha;
+                green += (long) (pixels[i] >> 8 & 0xff) * alpha;
+                blue += (long) (pixels[i] & 0xff) * alpha;
             }
-            picture = covered >= pixels.length * PICTURE_COVERAGE;
+            result[0] = covered >= pixels.length * PICTURE_COVERAGE ? 1 : 0;
+            if (weight > 0) {
+                int ink = Color.rgb((int) (red / weight), (int) (green / weight),
+                        (int) (blue / weight));
+                result[1] = isInk(ink) ? ink : 0;
+            }
         }
-        sPictureCache.put(drawable, picture);
-        return picture;
+        sAssetInk.put(drawable, result);
+        return result;
     }
 
     /**
@@ -405,7 +456,17 @@ public class BarIconColourHook {
             return true;
         }
         for (ViewParent parent = view.getParent(); parent instanceof View; parent = ((View) parent).getParent()) {
-            Drawable parentBg = ((View) parent).getBackground();
+            View held = (View) parent;
+            String name = entryName(held);
+            if (NAV_BAR_VIEW.equals(name) || NAV_BAR_VIEW_34.equals(name)
+                    || STATUS_BAR_VIEW.equals(name)
+                    || SystemBarBackgroundHook.isBandView(held)) {
+                // The bar's own colour band, which this module paints. Reading it as a plate behind
+                // every icon in the bar stood the whole bar down whenever the user picked a saturated
+                // colour -- the pink of a Dlink 3.0/4.0 nav band is not ink, so isInk() said plate.
+                break;
+            }
+            Drawable parentBg = held.getBackground();
             if (parentBg != null && !isInkBackground(parentBg)) {
                 sBackgroundCache.put(view, true);
                 return true;
@@ -417,6 +478,13 @@ public class BarIconColourHook {
 
     /** @return whether the drawable is an ink-coloured background we're allowed to recolor over. */
     private static boolean isInkBackground(android.graphics.drawable.Drawable drawable) {
+        if (drawable instanceof android.graphics.drawable.RippleDrawable
+                || drawable.getClass().getName().endsWith("Ripple")) {
+            // Press feedback, which paints nothing at rest. BYD's keys carry {@code KeyButtonRipple},
+            // and that extends {@code Drawable}, not {@code RippleDrawable}, so an instanceof test
+            // misses it and reads every stock key in a Dlink 3.0/4.0 bar as a plate of its own.
+            return true;
+        }
         if (drawable instanceof android.graphics.drawable.ColorDrawable) {
             int colour = ((android.graphics.drawable.ColorDrawable) drawable).getColor();
             return Color.alpha(colour) <= 0x40 || isInk(colour);
@@ -434,29 +502,85 @@ public class BarIconColourHook {
                 Color.blue(target));
     }
 
-    /** What an image is being drawn with, from whichever of the two mechanisms BYD used. */
-    private static int inkOf(ImageView image) {
+    /**
+     * What an image is being drawn with, asked in the order the framework applies the mechanisms: a tint
+     * overrides a colour filter on the same drawable, and the view's tint is handed to every drawable it
+     * is given, so either of those, not a remembered filter, is what reaches the pixels. With neither,
+     * the asset's own colour is the answer, and a colourful asset answers with none, which is BYD
+     * meaning something by it and is left alone.
+     */
+    private static int inkOf(ImageView image, Drawable drawable) {
         Integer cached = sInkCache.get(image);
         if (cached != null) {
             return cached;
         }
-        ColorFilter filter = image.getColorFilter();
-        for (Class<?> owner = filter == null ? null : filter.getClass();
-                owner != null; owner = owner.getSuperclass()) {
+        int result = tintColour(tintOfDrawable(drawable, image), drawable);
+        if (result == 0 && drawable != null) {
+            ColorFilter filter = drawable.getColorFilter();
+            result = filter == null ? 0 : colourOf(filter);
+        }
+        if (result == 0 && drawable instanceof BitmapDrawable) {
+            result = analyse((BitmapDrawable) drawable)[1];
+        }
+        sInkCache.put(image, Integer.valueOf(result));
+        return result;
+    }
+
+    /**
+     * The tint the drawable will be drawn with: its own if it carries one, since that is what paints,
+     * otherwise the view's, which is applied to the drawable when the asset is handed over.
+     * {@code Drawable.getTintList} is hidden, which SystemUI is exempt from asking for; when it still
+     * refuses, the view's tint is the only answer left.
+     */
+    private static ColorStateList tintOfDrawable(Drawable drawable, ImageView image) {
+        ColorStateList own = tintOf(drawable);
+        if (own != null) {
+            return own;
+        }
+        return image.getImageTintList();
+    }
+
+    /** The tint list a drawable carries, read through reflection because the getter is a hidden API. */
+    private static ColorStateList tintOf(Drawable drawable) {
+        if (drawable == null) {
+            return null;
+        }
+        try {
+            Object tint = XposedHelpers.callMethod(drawable, "getTintList");
+            return tint instanceof ColorStateList ? (ColorStateList) tint : null;
+        } catch (Throwable ignored) {
+            // No answer from this drawable.
+            return null;
+        }
+    }
+
+    /** The colour a colour filter carries, from whichever class in BYD's hierarchy holds it. */
+    private static int colourOf(ColorFilter filter) {
+        for (Class<?> owner = filter.getClass(); owner != null; owner = owner.getSuperclass()) {
             try {
                 Field colour = owner.getDeclaredField("mColor");
                 colour.setAccessible(true);
-                int result = colour.getInt(filter);
-                sInkCache.put(image, result);
-                return result;
+                return colour.getInt(filter);
             } catch (Throwable ignored) {
-                // Not a colour-carrying filter of this shape; the tint is the other place to look.
+                // Not a colour-carrying filter of this shape; keep walking up.
             }
         }
-        ColorStateList tint = image.getImageTintList();
-        int result = tint == null ? 0 : tint.getDefaultColor();
-        sInkCache.put(image, result);
-        return result;
+        return 0;
+    }
+
+    /**
+     * The colour a tint list actually resolves to. BYD's bar ink is a state list whose day and night
+     * entries differ, so {@code getDefaultColor} -- the colour of no state at all -- can disagree with
+     * what is being drawn: measured on a Dlink 3.0/4.0 key, default #EBF4FE while the drawable's own
+     * state painted #243240, which is how a walk that asked the default came to see an icon that was
+     * already light and leave a dark one alone.
+     */
+    private static int tintColour(ColorStateList tint, Drawable drawn) {
+        if (tint == null) {
+            return 0;
+        }
+        int fallback = tint.getDefaultColor();
+        return drawn == null ? fallback : tint.getColorForState(drawn.getState(), fallback);
     }
 
     /** @return the colour to use instead of {@code requested}, or null to let BYD's value stand. */
@@ -466,7 +590,7 @@ public class BarIconColourHook {
             return null;
         }
         Resources resources = view.getResources();
-        int id = inkId(resources, band.intValue());
+        int id = inkId(resources, band.intValue(), bar);
         if (id == 0) {
             return null;
         }
@@ -487,7 +611,7 @@ public class BarIconColourHook {
     private static int barOf(View view) {
         for (View current = view; current != null; ) {
             String name = entryName(current);
-            if (NAV_BAR_VIEW.equals(name)) {
+            if (NAV_BAR_VIEW.equals(name) || NAV_BAR_VIEW_34.equals(name)) {
                 return BAR_NAV;
             }
             if (STATUS_BAR_VIEW.equals(name)) {
@@ -531,6 +655,11 @@ public class BarIconColourHook {
      * then rewrites it, so no remembered value can drift toward ours.
      */
     static void reapply() {
+        // The walks read the view tree as it is now, so nothing carried over from the last decision.
+        sBackgroundCache.clear();
+        sInkCache.clear();
+        sInkIdCache.clear();
+        sBandJudgeCache.clear();
         Object dispatcher = sDispatcher == null ? null : sDispatcher.get();
         if (dispatcher != null && writeIconTint(dispatcher)) {
             try {
@@ -551,7 +680,8 @@ public class BarIconColourHook {
                 XposedBridge.log(TAG + ": nav icon re-drive failed: " + t);
             }
         }
-        pullNavInk();
+        pullBarInk(BAR_NAV);
+        pullBarInk(BAR_STATUS);
     }
 
     /** @return whether the tint the ROM computed was replaced with our contrast pick. */
@@ -574,7 +704,7 @@ public class BarIconColourHook {
     /** The id to ask the ROM for, or the one it asked for itself when there is nothing to judge. */
     private static int navColorId(int requested, View item) {
         Integer band = bandToJudge(SystemBarBackgroundHook.navBarColour());
-        int id = band == null ? 0 : inkId(item.getResources(), band.intValue());
+        int id = band == null ? 0 : inkId(item.getResources(), band.intValue(), BAR_NAV);
         return id == 0 ? requested : id;
     }
 
@@ -583,23 +713,45 @@ public class BarIconColourHook {
      *         cannot be found. The values, not the names, are what is judged, so a ROM that ships the
      *         same colours under different names still decides the same way.
      */
-    private static int inkId(Resources resources, int band) {
-        Integer cached = sInkIdCache.get(band);
+    private static int inkId(Resources resources, int band, int bar) {
+        Integer cached = sInkIdCache.get(Integer.valueOf(band * 4 + bar));
         if (cached != null) {
             return cached;
         }
-        if (sDayId == 0 || sNightId == 0) {
-            sDayId = resources.getIdentifier(NAV_ICON_DAY, "color", SYSTEM_UI_PACKAGE);
-            sNightId = resources.getIdentifier(NAV_ICON_NIGHT, "color", SYSTEM_UI_PACKAGE);
-        }
-        if (sDayId == 0 || sNightId == 0) {
+        int[] pair = inkPair(resources, bar);
+        if (pair[0] == 0 || pair[1] == 0) {
             return 0;
         }
-        int day = resources.getColor(sDayId);
-        int night = resources.getColor(sNightId);
-        int result = contrast(band, night) > contrast(band, day) ? sNightId : sDayId;
-        sInkIdCache.put(band, result);
+        int day = resources.getColor(pair[0]);
+        int night = resources.getColor(pair[1]);
+        int result = contrast(band, night) > contrast(band, day) ? pair[1] : pair[0];
+        sInkIdCache.put(Integer.valueOf(band * 4 + bar), Integer.valueOf(result));
         return result;
+    }
+
+    /** @return this fork's {@code {day, night}} ink ids for one bar, or {@code {0, 0}} when it has none. */
+    private static int[] inkPair(Resources resources, int bar) {
+        if (bar == BAR_NAV) {
+            if (sNavInkPair == null) {
+                sNavInkPair = resolvePair(resources, NAV_INK_NAMES);
+            }
+            return sNavInkPair;
+        }
+        if (sStatusInkPair == null) {
+            sStatusInkPair = resolvePair(resources, STATUS_INK_NAMES);
+        }
+        return sStatusInkPair;
+    }
+
+    private static int[] resolvePair(Resources resources, String[] names) {
+        for (int i = 0; i + 1 < names.length; i += 2) {
+            int day = resources.getIdentifier(names[i], "color", SYSTEM_UI_PACKAGE);
+            int night = resources.getIdentifier(names[i + 1], "color", SYSTEM_UI_PACKAGE);
+            if (day != 0 && night != 0) {
+                return new int[]{day, night};
+            }
+        }
+        return new int[]{0, 0};
     }
 
     private static Field field(Class<?> owner, String name) throws NoSuchFieldException {
@@ -648,24 +800,98 @@ public class BarIconColourHook {
         return linear <= 0.03928f ? linear / 12.92f : (float) Math.pow((linear + 0.055f) / 1.055f, 2.4f);
     }
 
-    /** What the nav ink decision sees, for the view-tree dump. */
+    /** What the ink decision sees for each bar, for the view-tree dump. */
     static String inkReport() {
-        Integer judged = bandOf(BAR_NAV);
-        StringBuilder text = new StringBuilder("nav ink backdrop=")
-                .append(colour(SystemBarBackgroundHook.navInkBackdrop()))
-                .append(" judged=").append(colour(judged));
-        View bar = SystemBarBackgroundHook.navBarView();
-        Resources resources = bar == null ? null : bar.getResources();
-        if (resources != null) {
-            int chosen = inkId(resources, judged == null ? 0 : judged.intValue());
-            if (sDayId != 0 && sNightId != 0) {
-                text.append(" day=").append(colour(resources.getColor(sDayId)))
-                        .append(" night=").append(colour(resources.getColor(sNightId)))
-                        .append(" chosen=").append(judged == null ? "none"
-                                : chosen == sNightId ? "night" : chosen == sDayId ? "day" : "none");
+        return inkReportOf("nav", BAR_NAV) + inkReportOf("status", BAR_STATUS);
+    }
+
+    private static String inkReportOf(String label, int bar) {
+        Integer judged = bandOf(bar);
+        StringBuilder text = new StringBuilder(" ").append(label).append(" ink=")
+                .append(colour(judged));
+        View content = bar == BAR_NAV ? SystemBarBackgroundHook.navBarView()
+                : SystemBarBackgroundHook.statusBarView();
+        Resources resources = content == null ? null : content.getResources();
+        if (resources == null) {
+            return text.append(" bar=none").toString();
+        }
+        int[] pair = inkPair(resources, bar);
+        if (pair[0] == 0 || pair[1] == 0) {
+            return text.append(" pair=none").toString();
+        }
+        if (judged == null) {
+            return text.append(" band=none").toString();
+        }
+        int chosen = inkId(resources, judged.intValue(), bar);
+        return text.append(" day=").append(colour(resources.getColor(pair[0])))
+                .append(" night=").append(colour(resources.getColor(pair[1])))
+                .append(" chosen=").append(chosen == pair[1] ? "night" : "day").toString();
+    }
+
+    /**
+     * Per-image trace of the walk, for the view-tree dump: what each image in the nav bar is asked to
+     * draw with, what the walk decides, and whether the colour is still on the drawable right after it
+     * is handed over. That last one is the question the dump of a Dlink 3.0/4.0 bar cannot answer by
+     * itself -- a key that reports a light ink while the pixels stay dark is a key whose drawable
+     * refused the colour, not a key the walk missed.
+     */
+    static void diagnose() {
+        View content = SystemBarBackgroundHook.navBarView();
+        Integer band = bandOf(BAR_NAV);
+        if (content == null || band == null) {
+            XposedBridge.log(TAG + ": ink diagnose: no nav bar to walk");
+            return;
+        }
+        Resources resources = content.getResources();
+        int id = inkId(resources, band.intValue(), BAR_NAV);
+        int target = id == 0 ? 0 : resources.getColor(id);
+        XposedBridge.log(TAG + ": ink diagnose nav band=" + colour(band)
+                + " target=" + (target == 0 ? "none" : colour(Integer.valueOf(target))));
+        diagnoseWalk(content, band.intValue(), target, new int[1]);
+    }
+
+    private static void diagnoseWalk(View view, int band, int target, int[] seen) {
+        if (view instanceof ImageView) {
+            ImageView image = (ImageView) view;
+            Drawable drawn = image.getDrawable();
+            if (seen[0]++ < 24) {
+                int before = inkOf(image, drawn);
+                String skip = isPictureIcon(drawn) ? "picture"
+                        : hasOwnOrParentBackground(image) ? "plate" : null;
+                Integer ink = skip == null ? betterInk(before, band, target) : null;
+                String stuck = "not applied";
+                if (ink != null) {
+                    paintIcon(image, drawn, ink.intValue());
+                    ColorFilter now = drawn == null ? null : drawn.getColorFilter();
+                    int nowColour = now == null ? 0 : colourOf(now);
+                    stuck = "filter now " + (nowColour == 0 ? "none" : colour(Integer.valueOf(nowColour)))
+                            + " tint now " + tintText(tintOf(drawn), drawn);
+                }
+                XposedBridge.log(TAG + ": ink " + entryName(view) + " "
+                        + view.getClass().getSimpleName() + " vis=" + view.getVisibility()
+                        + " size=" + view.getWidth() + 'x' + view.getHeight()
+                        + " drw=" + (drawn == null ? "none" : drawn.getClass().getSimpleName())
+                        + " was=" + (before == 0 ? "none" : colour(Integer.valueOf(before)))
+                        + " skip=" + (skip == null ? "none" : skip)
+                        + " put=" + (ink == null ? "none"
+                                : colour(Integer.valueOf(ink.intValue())))
+                        + " " + stuck);
             }
         }
-        return text.toString();
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                diagnoseWalk(group.getChildAt(i), band, target, seen);
+            }
+        }
+    }
+
+    private static String tintText(ColorStateList tint, Drawable drawn) {
+        if (tint == null) {
+            return "none";
+        }
+        return String.format("#%06X>[%06X", tint.getDefaultColor() & 0xFFFFFF,
+                tintColour(tint, drawn) & 0xFFFFFF);
     }
 
     private static String colour(Integer value) {

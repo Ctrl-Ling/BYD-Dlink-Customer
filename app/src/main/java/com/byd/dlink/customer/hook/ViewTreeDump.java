@@ -49,6 +49,7 @@ public class ViewTreeDump {
             XposedBridge.log(TAG + ": painted navBand=" + hex(SystemBarBackgroundHook.navBarColour())
                     + " statusBand=" + hex(SystemBarBackgroundHook.statusBarColour()));
             XposedBridge.log(TAG + ": " + BarIconColourHook.inkReport());
+            BarIconColourHook.diagnose();
             for (int i = 0; i < views.size(); i++) {
                 View view = (View) views.get(i);
                 Object root = roots.get(i);

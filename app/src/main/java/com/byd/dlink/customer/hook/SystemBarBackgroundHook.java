@@ -3,6 +3,7 @@ package com.byd.dlink.customer.hook;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
 import com.byd.dlink.customer.utils.PrefsManager;
@@ -38,6 +39,10 @@ public class SystemBarBackgroundHook {
             "com.android.systemui.statusbar.phone.navigationbar.CustomNavigationBarController";
     private static final String STATUS_BAR_VIEW = "status_bar";
     private static final String NAV_BAR_VIEW = "byd_custom_nav_bar";
+    // Dlink 3.0/4.0 has no BYD nav container at all: the keys are stock KeyButtonViews laid out by
+    // AOSP's NavigationBarInflaterView, and the only view that spans the bar and still sits behind
+    // every icon is the window's own frame.
+    private static final String NAV_BAR_VIEW_34 = "navigation_bar_frame";
 
     /** Written by StatusBar.setSystemUiVisibility on the main thread, read at paint time. */
     private static WeakReference<Object> sStatusBar;
@@ -112,7 +117,7 @@ public class SystemBarBackgroundHook {
                             String name = entryName(bar);
                             if (STATUS_BAR_VIEW.equals(name)) {
                                 sStatusBarView = new WeakReference<>(bar);
-                            } else if (NAV_BAR_VIEW.equals(name)) {
+                            } else if (NAV_BAR_VIEW.equals(name) || NAV_BAR_VIEW_34.equals(name)) {
                                 sNavBarView = new WeakReference<>(bar);
                             } else {
                                 return;
@@ -243,6 +248,7 @@ public class SystemBarBackgroundHook {
         sNavBarColour = paint(navBandView(), navBar, sNavBehind, false,
                 navAuto, PrefsManager.isNavBarBgImmersiveEnabled(),
                 PrefsManager.getNavigationBarBgColor());
+        putColour(navPlateView(), sNavBarColour);
         // Recorded here so judging the icons never costs a capture of its own. While the nav band is
         // the app's, the keys sit on the app's own pixels, and those are read once per decision.
         Integer ink = sNavBarColour != null ? sNavBarColour
@@ -256,6 +262,16 @@ public class SystemBarBackgroundHook {
         if (sBandsMoved || inkMoved) {
             redrive();
         }
+        // A decision is the only thing that can move a band, and it is supposed to be news about the
+        // app in front, not a frame of its own. This line is how a scroll inside one app is proved --
+        // one per switch is the answer, anything more is the bar re-reading the display per frame.
+        XposedBridge.log(TAG + ": decided app=" + sDecidedPackage + " status=" + hex(sStatusBarColour)
+                + " nav=" + hex(sNavBarColour));
+    }
+
+    /** What a band is showing, in the words a log line can be read in: {@code app} means we own none. */
+    private static String hex(Integer colour) {
+        return colour == null ? "app" : Integer.toHexString(colour.intValue());
     }
 
     /**
@@ -273,6 +289,7 @@ public class SystemBarBackgroundHook {
     private static void repaint() {
         sBandsMoved = false;
         putColour(navBandView(), sNavBarColour);
+        putColour(navPlateView(), sNavBarColour);
         putColour(bar(sStatusBarView), sStatusBarColour);
         if (sBandsMoved) {
             redrive();
@@ -375,14 +392,71 @@ public class SystemBarBackgroundHook {
      * The band the user picks has to sit behind the keys, and on this fork the container the keys are
      * laid out in is drawn above its own background -- measured, an opaque colour on it hides every
      * icon in the bar. The parent it is added to is not, so the band goes there.
+     *
+     * Dlink 3.0/4.0 hands over the window's own frame instead, which is behind the keys but has an
+     * opaque plate drawn above it, so the frame alone is not enough -- see {@link #navPlateView()}.
      */
     private static View navBandView() {
         View bar = bar(sNavBarView);
         if (bar == null) {
             return null;
         }
+        if (NAV_BAR_VIEW_34.equals(entryName(bar))) {
+            return bar;
+        }
         android.view.ViewParent parent = bar.getParent();
         return parent instanceof View ? (View) parent : bar;
+    }
+
+    /**
+     * The plate Dlink 3.0/4.0 draws above its nav frame: the child of the frame that spans the bar. The
+     * frame is behind it and the plate is opaque, so a colour put on the frame alone is invisible
+     * wherever the ROM shows the plate -- which is every app that keeps its pixels off the bar, i.e.
+     * exactly the screens a nav bar colour is asked for. Measured: the frame carried the picked
+     * #f5f5f5 while the strip on screen stayed the plate's own #18222f. The plate is where the keys
+     * already sit, so colouring it costs them nothing.
+     *
+     * @return the plate, or null where there is none -- the other forks paint the frame's parent
+     */
+    private static View navPlateView() {
+        View bar = bar(sNavBarView);
+        if (bar == null || !NAV_BAR_VIEW_34.equals(entryName(bar))) {
+            return null;
+        }
+        View plate = bar;
+        for (int depth = 0; depth < 4; depth++) {
+            View spanning = spanningChild(plate);
+            if (spanning == null) {
+                break;
+            }
+            plate = spanning;
+        }
+        return plate == bar ? null : plate;
+    }
+
+    /** The child that covers its parent whole, which is how a plate is recognised without a name. */
+    private static View spanningChild(View parent) {
+        if (!(parent instanceof ViewGroup)) {
+            return null;
+        }
+        ViewGroup group = (ViewGroup) parent;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View child = group.getChildAt(i);
+            if (child.getVisibility() == View.VISIBLE && child.getWidth() >= group.getWidth()
+                    && child.getHeight() >= group.getHeight()) {
+                return child;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Whether this view is a band this module paints. Its colour is then ours, and an icon's judgement
+     * has to be made against it rather than standing down because a plate is behind the icon -- a
+     * saturated band colour reads as a plate to any test that only looks at the colour.
+     */
+    static boolean isBandView(View view) {
+        return sOriginals.containsKey(view);
     }
 
     /**
@@ -421,6 +495,11 @@ public class SystemBarBackgroundHook {
     /** The nav bar view, so the icon hook can read the views inside it rather than wait to be called. */
     static View navBarView() {
         return bar(sNavBarView);
+    }
+
+    /** The status bar view, for the same reason. */
+    static View statusBarView() {
+        return bar(sStatusBarView);
     }
 
     /**

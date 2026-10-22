@@ -19,6 +19,7 @@ public class CommandReceiver {
     private static final String ACTION_SPLIT_SCREEN = "com.byd.dlink.customer.SPLIT_SCREEN";
     private static final String ACTION_AUDIO_PROBE = "com.byd.dlink.customer.AUDIO_PROBE";
     private static final String ACTION_VIEW_TREE = "com.byd.dlink.customer.VIEW_TREE";
+    private static final String ACTION_COLOURS = "com.byd.dlink.customer.COLOURS";
     private static final String ACTION_PREFS_CHANGED = "com.byd.dlink.customer.PREFS_CHANGED";
     private static boolean sRegistered = false;
 
@@ -83,6 +84,7 @@ public class CommandReceiver {
             IntentFilter filter = new IntentFilter(ACTION_SPLIT_SCREEN);
             filter.addAction(ACTION_AUDIO_PROBE);
             filter.addAction(ACTION_VIEW_TREE);
+            filter.addAction(ACTION_COLOURS);
             filter.addAction(ACTION_PREFS_CHANGED);
             context.registerReceiver(new CommandBroadcastReceiver(), filter);
             sRegistered = true;
@@ -98,6 +100,10 @@ public class CommandReceiver {
             String action = intent.getAction();
             if (ACTION_VIEW_TREE.equals(action)) {
                 ViewTreeDump.request();
+                return;
+            }
+            if (ACTION_COLOURS.equals(action)) {
+                dumpColours(context);
                 return;
             }
             if (ACTION_PREFS_CHANGED.equals(action)) {
@@ -133,6 +139,31 @@ public class CommandReceiver {
                     launchSplitScreen(appContext, pkg1, pkg2);
                 }
             });
+        }
+    }
+
+    /**
+     * Every colour resource this SystemUI ships, by name and value. Which names carry the bar's
+     * day/night ink is a question each fork answers differently, and the values in the views say only
+     * what is being drawn now, not what the pair is called.
+     */
+    private static void dumpColours(Context context) {
+        try {
+            Class<?> colour = Class.forName("com.android.systemui.R$color", false,
+                    context.getClassLoader());
+            android.content.res.Resources resources = context.getResources();
+            java.lang.reflect.Field[] fields = colour.getFields();
+            for (int i = 0; i < fields.length; i++) {
+                try {
+                    XposedBridge.log("BYD Dlink Customer: colour " + fields[i].getName()
+                            + " = #" + Integer.toHexString(resources.getColor(fields[i].getInt(null))));
+                } catch (Throwable ignored) {
+                    // Not a colour a value can be read for; the list simply skips it.
+                }
+            }
+            XposedBridge.log("BYD Dlink Customer: " + fields.length + " colours dumped");
+        } catch (Throwable t) {
+            XposedBridge.log("BYD Dlink Customer: colour dump failed: " + t);
         }
     }
 
