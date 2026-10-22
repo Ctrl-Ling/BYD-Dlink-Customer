@@ -109,18 +109,20 @@ public class ScreenCornerHook {
          * One corner, the top-left, as the fraction of each pixel that falls outside the arc. The
          * other three are this one mirrored, which is why a single bitmap covers the whole screen
          * and why the arc stays tangent to both screen edges however the bars are laid out.
+         *
+         * The arc is the superellipse |r-x|^4 + |r-y|^4 = r^4: it meets both edges tangentially
+         * like the circle does, but runs flatter along them, which is the look he picked.
          */
         private static Bitmap build(int radius) {
             int[] pixels = new int[radius * radius];
-            double r2 = (double) radius * radius;
+            double r4 = (double) radius * radius * radius * radius;
             for (int y = 0; y < radius; y++) {
                 for (int x = 0; x < radius; x++) {
                     int outside = 0;
                     for (int j = 0; j < SAMPLES; j++) {
-                        double dy = radius - (y + (j + 0.5) / SAMPLES);
+                        double dy4 = pow4(radius - (y + (j + 0.5) / SAMPLES));
                         for (int i = 0; i < SAMPLES; i++) {
-                            double dx = radius - (x + (i + 0.5) / SAMPLES);
-                            if (dx * dx + dy * dy > r2) {
+                            if (pow4(radius - (x + (i + 0.5) / SAMPLES)) + dy4 > r4) {
                                 outside++;
                             }
                         }
@@ -129,6 +131,11 @@ public class ScreenCornerHook {
                 }
             }
             return Bitmap.createBitmap(pixels, radius, radius, Bitmap.Config.ARGB_8888);
+        }
+
+        private static double pow4(double value) {
+            double squared = value * value;
+            return squared * squared;
         }
 
         @Override
