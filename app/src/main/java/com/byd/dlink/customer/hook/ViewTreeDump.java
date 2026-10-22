@@ -50,6 +50,7 @@ public class ViewTreeDump {
                     + " statusBand=" + hex(SystemBarBackgroundHook.statusBarColour()));
             XposedBridge.log(TAG + ": " + BarIconColourHook.inkReport());
             BarIconColourHook.diagnose();
+            logDisplaySizes();
             for (int i = 0; i < views.size(); i++) {
                 View view = (View) views.get(i);
                 Object root = roots.get(i);
@@ -110,6 +111,42 @@ public class ViewTreeDump {
         }
     }
 
+    /**
+     * The insets WindowManager handed each window. The top one is what the framework has committed to
+     * for the status bar -- the number a bar height has to agree with, because an app that lays its
+     * content out below it paints its own scrim into whatever the shrunk bar leaves.
+     */
+    private static String insetsOf(View view) {
+        // A window root's parent is the ViewRootImpl, not another View -- the bar views this dump
+        // recurses into all have a parent, so only the DecorView of each window has insets to show.
+        if (view.getParent() instanceof View) {
+            return "-";
+        }
+        android.view.WindowInsets insets = view.getRootWindowInsets();
+        if (insets == null) {
+            return "none";
+        }
+        return insets.getSystemWindowInsetLeft() + "," + insets.getSystemWindowInsetTop() + ","
+                + insets.getSystemWindowInsetRight() + "," + insets.getSystemWindowInsetBottom();
+    }
+
+    /** The size the framework hands apps versus the panel's real size, i.e. its own bar arithmetic. */
+    private static void logDisplaySizes() {
+        try {
+            Object global = XposedHelpers.callStaticMethod(
+                    Class.forName("android.hardware.display.DisplayManagerGlobal"), "getInstance");
+            Object display = XposedHelpers.callMethod(global, "getRealDisplay", 0);
+            android.graphics.Point real = new android.graphics.Point();
+            android.graphics.Point app = new android.graphics.Point();
+            XposedHelpers.callMethod(display, "getRealSize", real);
+            XposedHelpers.callMethod(display, "getSize", app);
+            XposedBridge.log(TAG + ": display real=" + real.x + 'x' + real.y
+                    + " app=" + app.x + 'x' + app.y);
+        } catch (Throwable t) {
+            XposedBridge.log(TAG + ": display sizes unreadable: " + t);
+        }
+    }
+
     private static void describe(String window, View view) {
         if (sLines++ > MAX_LINES) {
             return;
@@ -125,6 +162,7 @@ public class ViewTreeDump {
                 .append(" pos=").append(xy[0]).append(',').append(xy[1])
                 .append(" size=").append(view.getWidth()).append('x').append(view.getHeight())
                 .append(" ty=").append(view.getTranslationY())
+                .append(" winInsets=").append(insetsOf(view))
                 .append(" pad=").append(view.getPaddingLeft()).append(',')
                 .append(view.getPaddingTop()).append(',')
                 .append(view.getPaddingRight()).append(',')
