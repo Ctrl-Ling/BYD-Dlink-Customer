@@ -9,7 +9,10 @@ import com.byd.dlink.customer.utils.PrefsManager;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
@@ -61,12 +64,98 @@ public class SplitScreenHook {
 
     private static volatile boolean sFieldsLogged = false;
     private static volatile boolean sMethodTraceLogged = false;
+    private static volatile boolean sSnapTargetOnlyLogged = false;
     private static Class<?> sDividerViewClass = null;
     private static Class<?> sDividerClass = null;
     private static Class<?> sDividerStateClass = null;
     private static volatile Object sDividerState = null;
     private static volatile Object sDividerView = null;
     private static volatile boolean sDividerStateLogged = false;
+
+    // A drag asks the same questions on every motion event -- is the strip in the user's hand,
+    // which way is the screen, how wide is it, where does the divider window sit -- and each
+    // used to answer by walking the class's declared members again. That walk is the cost the
+    // hook adds to the frame, so every (class, name) lookup is resolved once and kept. An
+    // absent name is a result too: re-probing what a class does not have was the expensive half.
+    private static final Map<String, Object> sReflection = new ConcurrentHashMap<>();
+    private static final Object ABSENT = new Object();
+
+    private static Field cachedField(Class<?> clazz, String name) {
+        String key = "f:" + clazz.getName() + '#' + name;
+        Object hit = sReflection.get(key);
+        if (hit == null) {
+            hit = findField(clazz, name);
+            sReflection.put(key, hit == null ? ABSENT : hit);
+        }
+        return hit instanceof Field ? (Field) hit : null;
+    }
+
+    private static Field findField(Class<?> clazz, String name) {
+        for (Class<?> c = clazz; c != null && c != Object.class; c = c.getSuperclass()) {
+            try {
+                Field field = c.getDeclaredField(name);
+                field.setAccessible(true);
+                return field;
+            } catch (Throwable ignored) {
+            }
+        }
+        return null;
+    }
+
+    private static Method cachedNoArgMethod(Class<?> clazz, Class<?> returnType, String... names) {
+        StringBuilder key = new StringBuilder("m:")
+                .append(clazz.getName()).append('#').append(returnType.getName());
+        for (String name : names) key.append('#').append(name);
+        String lookupKey = key.toString();
+
+        Object hit = sReflection.get(lookupKey);
+        if (hit == null) {
+            hit = findNoArgMethod(clazz, returnType, names);
+            sReflection.put(lookupKey, hit == null ? ABSENT : hit);
+        }
+        return hit instanceof Method ? (Method) hit : null;
+    }
+
+    private static Method findNoArgMethod(Class<?> clazz, Class<?> returnType, String... names) {
+        for (Class<?> c = clazz; c != null && c != Object.class; c = c.getSuperclass()) {
+            try {
+                for (Method m : c.getDeclaredMethods()) {
+                    if (m.getParameterCount() != 0 || !returnType.isAssignableFrom(
+                            m.getReturnType())) continue;
+                    for (String name : names) {
+                        if (m.getName().equals(name)) {
+                            m.setAccessible(true);
+                            return m;
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        return null;
+    }
+
+    // The int fields on DividerState that carry a position, collected once per class. Setting
+    // them ran the whole hierarchy scan on every getCurrentPosition() call.
+    private static Field[] cachedPositionFields(Class<?> clazz) {
+        String key = "pf:" + clazz.getName();
+        Object hit = sReflection.get(key);
+        if (hit == null) {
+            ArrayList<Field> fields = new ArrayList<>();
+            for (Class<?> c = clazz; c != null && c != Object.class; c = c.getSuperclass()) {
+                for (Field f : c.getDeclaredFields()) {
+                    if (!isIntClass(f.getType()) || Modifier.isStatic(f.getModifiers())) continue;
+                    String lowerName = f.getName().toLowerCase();
+                    if (!lowerName.contains("position") && !lowerName.contains("pos")) continue;
+                    f.setAccessible(true);
+                    fields.add(f);
+                }
+            }
+            hit = fields.toArray(new Field[0]);
+            sReflection.put(key, hit);
+        }
+        return (Field[]) hit;
+    }
 
     public static void init(XC_LoadPackage.LoadPackageParam lpparam) {
         if (!PrefsManager.isSplitScreenEnabled()) {
@@ -170,9 +259,8 @@ public class SplitScreenHook {
 
     private static int intField(Object obj, String name) {
         try {
-            Field field = XposedHelpers.findFieldIfExists(obj.getClass(), name);
+            Field field = cachedField(obj.getClass(), name);
             if (field == null) return -999;
-            field.setAccessible(true);
             return field.getInt(obj);
         } catch (Throwable t) {
             return -999;
@@ -202,9 +290,8 @@ public class SplitScreenHook {
 
     private static boolean isDragging(Object dividerView) {
         try {
-            Field field = XposedHelpers.findFieldIfExists(dividerView.getClass(), "mMoving");
+            Field field = cachedField(dividerView.getClass(), "mMoving");
             if (field == null || field.getType() != boolean.class) return false;
-            field.setAccessible(true);
             return field.getBoolean(dividerView);
         } catch (Throwable t) {
             return false;
@@ -391,27 +478,18 @@ public class SplitScreenHook {
 
     private static void setDividerStatePosition(Object state, int desiredPosition) {
         if (state == null) return;
-        Class<?> clazz = state.getClass();
-        while (clazz != null && !clazz.getName().equals("java.lang.Object")) {
-            for (Field f : clazz.getDeclaredFields()) {
-                if (!isIntClass(f.getType())) continue;
-                if (Modifier.isStatic(f.getModifiers())) continue;
-                String lowerName = f.getName().toLowerCase();
-                if (!lowerName.contains("position") && !lowerName.contains("pos")) continue;
-                try {
-                    f.setAccessible(true);
-                    int old = f.getInt(state);
-                    if (old != desiredPosition) {
-                        f.setInt(state, desiredPosition);
-                        XposedBridge.log(TAG + ": DividerState." + f.getName()
-                                + " " + old + " → " + desiredPosition);
-                    }
-                } catch (Throwable t) {
-                    XposedBridge.log(TAG + ": setDividerStatePosition error on "
-                            + f.getName() + ": " + t);
+        for (Field f : cachedPositionFields(state.getClass())) {
+            try {
+                int old = f.getInt(state);
+                if (old != desiredPosition) {
+                    f.setInt(state, desiredPosition);
+                    XposedBridge.log(TAG + ": DividerState." + f.getName()
+                            + " " + old + " → " + desiredPosition);
                 }
+            } catch (Throwable t) {
+                XposedBridge.log(TAG + ": setDividerStatePosition error on "
+                        + f.getName() + ": " + t);
             }
-            clazz = clazz.getSuperclass();
         }
     }
 
@@ -592,7 +670,11 @@ public class SplitScreenHook {
 
     // ── Method tracer: log every DividerView method call (first time only) ──
 
+    // Only a diagnostic, and it costs a hook on every non-get/set DividerView method --
+    // including the touch dispatch that runs per motion event, so the trace itself slows the
+    // drag it is meant to explain. Installed on demand, off by default.
     private static void hookMethodTracer(Class<?> dividerViewClass) {
+        if (!PrefsManager.isSplitTraceEnabled()) return;
         for (Method method : dividerViewClass.getDeclaredMethods()) {
             if (Modifier.isStatic(method.getModifiers())) continue;
             String name = method.getName();
@@ -785,10 +867,8 @@ public class SplitScreenHook {
             Object middle = XposedHelpers.callMethod(snapAlgorithm, "getMiddleTarget");
 
             // resizeStack bails out when it thinks nothing changed.
-            Field lastResize = XposedHelpers.findFieldIfExists(
-                    dividerView.getClass(), "mLastResizeRect");
+            Field lastResize = cachedField(dividerView.getClass(), "mLastResizeRect");
             if (lastResize != null) {
-                lastResize.setAccessible(true);
                 Object rect = lastResize.get(dividerView);
                 if (rect != null) XposedHelpers.callMethod(rect, "setEmpty");
             }
@@ -944,9 +1024,8 @@ public class SplitScreenHook {
 
     private static Rect rectField(Object obj, String name) {
         try {
-            Field field = XposedHelpers.findFieldIfExists(obj.getClass(), name);
+            Field field = cachedField(obj.getClass(), name);
             if (field == null) return null;
-            field.setAccessible(true);
             Object value = field.get(obj);
             return value instanceof Rect ? (Rect) value : null;
         } catch (Throwable t) {
@@ -1078,11 +1157,13 @@ public class SplitScreenHook {
     private static int getLivePosition(Object dividerView) {
         if (!(dividerView instanceof View)) return -1;
         try {
+            Method horizontal = cachedNoArgMethod(dividerView.getClass(), boolean.class,
+                    "isHorizontalDivision");
+            if (horizontal == null) return -1;
             int[] loc = new int[2];
             ((View) dividerView).getLocationOnScreen(loc);
-            boolean horizontal = Boolean.TRUE.equals(
-                    XposedHelpers.callMethod(dividerView, "isHorizontalDivision"));
-            int position = (horizontal ? loc[1] : loc[0]) + intField(dividerView, "mDividerInsets");
+            int position = ((boolean) horizontal.invoke(dividerView) ? loc[1] : loc[0])
+                    + intField(dividerView, "mDividerInsets");
             return position > 0 ? position : -1;
         } catch (Throwable t) {
             return -1;
@@ -1245,6 +1326,7 @@ public class SplitScreenHook {
                     int desired = getDesiredPosition(param.thisObject);
                     if (desired <= 0) return;
                     int original = (int) param.getResult();
+                    if (original == desired) return;
                     XposedBridge.log(TAG + ": calculatePositionForInsetBounds() "
                             + original + " → " + desired);
                     param.setResult(desired);
@@ -1287,16 +1369,18 @@ public class SplitScreenHook {
 
                     Rect adjusted = new Rect(rect);
                     int dividerThickness = dividerThicknessOf(param.thisObject);
+                    int edge = desiredPosition + dividerThickness;
+                    // Called on every frame of a drag, so a rewrite that changes nothing has to
+                    // stay silent -- otherwise the log itself is part of the frame cost.
                     if (landscape) {
-                        int oldLeft = rect.left;
-                        adjusted.left = desiredPosition + dividerThickness;
+                        if (rect.left == edge) return;
+                        adjusted.left = edge;
                         XposedBridge.log(TAG + ": secondaryBounds.left "
-                                + oldLeft + " → " + adjusted.left);
+                                + rect.left + " → " + edge);
                     } else {
-                        int oldTop = rect.top;
-                        adjusted.top = desiredPosition + dividerThickness;
-                        XposedBridge.log(TAG + ": secondaryBounds.top " + oldTop + " → "
-                                + adjusted.top);
+                        if (rect.top == edge) return;
+                        adjusted.top = edge;
+                        XposedBridge.log(TAG + ": secondaryBounds.top " + rect.top + " → " + edge);
                     }
                     param.setResult(adjusted);
                 }
@@ -1308,15 +1392,9 @@ public class SplitScreenHook {
 
     private static int dividerThicknessOf(Object dividerView) {
         try {
-            Class<?> clazz = dividerView.getClass();
-            while (clazz != null && !clazz.getName().equals("android.view.View")) {
-                for (Field f : clazz.getDeclaredFields()) {
-                    if (f.getName().equals("mDividerWindowWidth") && isIntClass(f.getType())) {
-                        f.setAccessible(true);
-                        return f.getInt(dividerView);
-                    }
-                }
-                clazz = clazz.getSuperclass();
+            Field field = cachedField(dividerView.getClass(), "mDividerWindowWidth");
+            if (field != null && isIntClass(field.getType())) {
+                return field.getInt(dividerView);
             }
         } catch (Throwable ignored) {
         }
@@ -1406,8 +1484,11 @@ public class SplitScreenHook {
                     } else if (hasSnapTargetOnly && param.args[0] != null) {
                         // Nothing to force here: this overload takes its position from the
                         // target, which is the system's object to set.
-                        XposedBridge.log(TAG + ": " + methodName
-                                + "(SnapTarget) left alone");
+                        if (!sSnapTargetOnlyLogged) {
+                            sSnapTargetOnlyLogged = true;
+                            XposedBridge.log(TAG + ": " + methodName
+                                    + "(SnapTarget) left alone");
+                        }
                     }
                 }
             });
@@ -1541,40 +1622,10 @@ public class SplitScreenHook {
         }
     }
 
-    // resizeStack's dockSide must match the actual split direction, otherwise the
-    // resized task bounds don't line up with the divider and leave black bars.
-    private static int resolveDockSide(Object dividerView) {
-        try {
-            Class<?> clazz = dividerView.getClass();
-            while (clazz != null && !clazz.getName().equals("android.view.View")) {
-                for (Field f : clazz.getDeclaredFields()) {
-                    if (f.getName().equals("mDockSide") && isIntClass(f.getType())) {
-                        f.setAccessible(true);
-                        int side = f.getInt(dividerView);
-                        if (side >= 0) {
-                            XposedBridge.log(TAG + ": dockSide from mDockSide=" + side);
-                            return side;
-                        }
-                    }
-                }
-                clazz = clazz.getSuperclass();
-            }
-        } catch (Throwable ignored) {
-        }
-        int side = isLandscape(dividerView) ? 1 : 3;
-        XposedBridge.log(TAG + ": dockSide from orientation=" + side);
-        return side;
-    }
-
     private static boolean isLandscape(Object obj) {
         try {
-            for (Method m : obj.getClass().getDeclaredMethods()) {
-                if (m.getName().equals("isLandscape") && m.getParameterCount() == 0
-                        && isBoolClass(m.getReturnType())) {
-                    m.setAccessible(true);
-                    return (boolean) m.invoke(obj);
-                }
-            }
+            Method method = cachedNoArgMethod(obj.getClass(), boolean.class, "isLandscape");
+            if (method != null) return (boolean) method.invoke(obj);
         } catch (Throwable ignored) {
         }
 
@@ -1600,16 +1651,11 @@ public class SplitScreenHook {
 
     private static int getTotalSize(Object obj) {
         try {
-            for (Method m : obj.getClass().getDeclaredMethods()) {
-                String name = m.getName();
-                if ((name.equals("getTotalSize") || name.equals("getDisplaySize")
-                        || name.equals("getBoundsSize"))
-                        && m.getParameterCount() == 0
-                        && isIntClass(m.getReturnType())) {
-                    m.setAccessible(true);
-                    int result = (int) m.invoke(obj);
-                    if (result > 0) return result;
-                }
+            Method method = cachedNoArgMethod(obj.getClass(), int.class,
+                    "getTotalSize", "getDisplaySize", "getBoundsSize");
+            if (method != null) {
+                int result = (int) method.invoke(obj);
+                if (result > 0) return result;
             }
         } catch (Throwable ignored) {
         }

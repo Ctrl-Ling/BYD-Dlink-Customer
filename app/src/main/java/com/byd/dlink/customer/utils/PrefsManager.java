@@ -13,6 +13,8 @@ public class PrefsManager {
     public static final String KEY_GLOBAL_ENABLED = "global_enabled";
     public static final String KEY_SPLIT_SCREEN_ENABLED = "split_screen_enabled";
     public static final String KEY_SPLIT_BLACKLIST_DISABLED = "split_blacklist_disabled";
+    /** Diagnostic only: installs the per-method call trace on DividerView. */
+    public static final String KEY_SPLIT_TRACE_ENABLED = "split_trace_enabled";
     public static final String KEY_STATUS_BAR_ENABLED = "status_bar_enabled";
     public static final String KEY_STATUS_BAR_HEIGHT = "status_bar_height";
     public static final String KEY_NAV_BAR_ENABLED = "nav_bar_enabled";
@@ -100,6 +102,7 @@ public class PrefsManager {
             {KEY_GLOBAL_ENABLED, "persist.byd.dlink.enabled"},
             {KEY_SPLIT_SCREEN_ENABLED, "persist.byd.dlink.split"},
             {KEY_SPLIT_BLACKLIST_DISABLED, "persist.byd.dlink.blacklist_disabled"},
+            {KEY_SPLIT_TRACE_ENABLED, "persist.byd.dlink.split_trace"},
             {KEY_STATUS_BAR_ENABLED, "persist.byd.dlink.statusbar_enabled"},
             {KEY_STATUS_BAR_HEIGHT, "persist.byd.dlink.statusbar_height"},
             {KEY_NAV_BAR_ENABLED, "persist.byd.dlink.navbar_enabled"},
@@ -259,6 +262,11 @@ public class PrefsManager {
 
     public static boolean isSplitBlacklistDisabled() {
         return isGlobalEnabled() && getBool(KEY_SPLIT_BLACKLIST_DISABLED);
+    }
+
+    /** Set by hand with `setprop persist.byd.dlink.split_trace true`; the settings page never writes it. */
+    public static boolean isSplitTraceEnabled() {
+        return getBool(KEY_SPLIT_TRACE_ENABLED);
     }
 
     public static int getStatusBarHeightOverride() {
