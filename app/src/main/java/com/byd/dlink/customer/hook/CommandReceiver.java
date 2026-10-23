@@ -1,5 +1,6 @@
 package com.byd.dlink.customer.hook;
 
+import android.app.ActivityOptions;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -167,19 +168,43 @@ public class CommandReceiver {
         }
     }
 
+    // The two split stacks are picked by the launch's windowing mode, and both SystemUI's own
+    // wrapper (ActivityOptionsCompat.makeSplitScreenOptions) and the server's
+    // ScreenSplitUtils.makeSplitScreenOptions set exactly these: 3 for the half anchored to the
+    // leading edge, 4 for the other one.
+    private static final int LAUNCH_MODE_PRIMARY_STACK = 3;
+    private static final int LAUNCH_MODE_SECONDARY_STACK = 4;
+
+    // Same as the ROM's own launch: NEW_TASK plus the second 0x10000000 bit. setFlags rather
+    // than addFlags, because getLaunchIntentForPackage already carries RESET_TASK_IF_NEEDED and
+    // the ROM replaces it.
+    private static final int LAUNCH_FLAGS =
+            Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP;
+
+    // Putting an app into one half of the split is a launch whose options name that half's
+    // stack. SystemUI's split-app buttons build those options through their own class; asking
+    // the framework directly gives the same result without depending on a class this fork has
+    // been known to rename.
+    private static void launchIntoSplitHalf(Context context, String pkg, boolean primary) {
+        Intent launch = context.getPackageManager().getLaunchIntentForPackage(pkg);
+        if (launch == null) {
+            XposedBridge.log("BYD Dlink Customer: no launch intent for " + pkg);
+            return;
+        }
+        ActivityOptions options = ActivityOptions.makeBasic();
+        XposedHelpers.callMethod(options, "setLaunchWindowingMode",
+                primary ? LAUNCH_MODE_PRIMARY_STACK : LAUNCH_MODE_SECONDARY_STACK);
+        XposedHelpers.callMethod(options, "setSplitScreenCreateMode", primary ? 0 : 1);
+        launch.setFlags(LAUNCH_FLAGS);
+        context.startActivity(launch, options.toBundle());
+    }
+
     private static void launchSplitScreen(Context context, String pkg1, String pkg2) {
         try {
-            // A split is only a split when the launch carries split windowing options;
-            // LAUNCH_ADJACENT alone leaves both tasks fullscreen. SystemUI's own picker entry
-            // point builds those options, and this receiver runs inside SystemUI, so its
-            // classloader is the one that already has the class.
-            Class<?> dividerUtils = XposedHelpers.findClass(
-                    "com.android.systemui.stackdivider.DividerUtils", context.getClassLoader());
-            XposedHelpers.callStaticMethod(dividerUtils, "startSplitAppActivity",
-                    context, pkg1, true);
-            XposedHelpers.callStaticMethod(dividerUtils, "startSplitAppActivity",
-                    context, pkg2, false);
-            XposedBridge.log("BYD Dlink Customer: split screen launched via DividerUtils");
+            launchIntoSplitHalf(context, pkg1, true);
+            launchIntoSplitHalf(context, pkg2, false);
+            XposedBridge.log("BYD Dlink Customer: split screen launched with our own"
+                    + " split options");
         } catch (Throwable t) {
             XposedBridge.log("BYD Dlink Customer: launchSplitScreen failed: " + t);
         }
