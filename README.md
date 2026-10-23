@@ -64,7 +64,7 @@ An Xposed module for BYD automotive Dlink infotainment system, providing extensi
 ### OTA & Autostart
 ![OTA and autostart](screenshots/other_page.png)
 
-### Split In Action (26% / 74%)
+### Split In Action (this module + Via, 26% / 74%)
 ![Split in action](screenshots/split_screen.png)
 
 ### Desktop With Customized Bars
@@ -235,7 +235,7 @@ This module modifies system behavior. Use at your own risk. The author is not re
 ### 其他（OTA 与自启动）
 ![其他](screenshots/other_page.png)
 
-### 分屏效果（26% / 74%）
+### 分屏效果（本模块 + Via 浏览器，26% / 74%）
 ![分屏效果](screenshots/split_screen.png)
 
 ### 定制后的桌面
