@@ -176,9 +176,9 @@ This module modifies system behavior. Use at your own risk. The author is not re
 ---
 
 <a id="中文版本"></a>
-# BYD Dlink Customer - 中文版本
+# 迪客（BYD Dlink Customer）- 中文版本
 
-一款针对比亚迪 Dlink 车机系统的 Xposed 模块，提供分屏、系统栏、音频，以及车机行为（自启动、系统更新）的深度自定义功能。
+「迪客」是一款针对比亚迪 Dlink 车机系统的 Xposed 模块，提供分屏、系统栏、音频，以及车机行为（自启动、系统更新）的深度自定义功能。
 
 ## 功能特性
 
@@ -254,7 +254,7 @@ This module modifies system behavior. Use at your own risk. The author is not re
 
 ### 从 GitHub Releases 安装
 1. 从 [Releases](https://github.com/Ctrl-Ling/BYD-Dlink-Customer/releases) 下载最新 APK
-2. 安装 APK
+2. 安装 APK（中文环境下模块名显示为「迪客」，英文环境仍为 BYD Dlink Customer）
 3. 打开 LSPosed 管理器
 4. 启用模块并勾选作用域：
    - `com.android.systemui` —— 分屏、系统栏、栏背景色、图标颜色、屏幕圆角
