@@ -73,6 +73,10 @@ dexprobe/
 *.old
 *.tmp
 
+# Stray captures at the repo root (module screenshots live in screenshots/)
+/*.png
+/*.mp4
+
 # Log files
 *.log
 
