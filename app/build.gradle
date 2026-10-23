@@ -2,6 +2,9 @@ plugins {
     id 'com.android.application'
 }
 
+// 版本号带编译时刻：1.<年两位>.<月日时分>，如 1.26.10231415
+def compiledAt = new Date()
+
 android {
     namespace 'com.byd.dlink.customer'
     compileSdk 34
@@ -10,8 +13,8 @@ android {
         applicationId "com.byd.dlink.customer"
         minSdk 29
         targetSdk 34
-        versionCode 217
-        versionName "1.216"
+        versionCode 218
+        versionName "1.${compiledAt.format('yy')}.${compiledAt.format('MMddHHmm')}"
     }
 
     signingConfigs {
