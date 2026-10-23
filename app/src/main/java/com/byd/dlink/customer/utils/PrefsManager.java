@@ -400,15 +400,15 @@ public class PrefsManager {
     }
 
     public static boolean isOtaRebootInterceptEnabled() {
-        return getBool(KEY_OTA_REBOOT_INTERCEPT);
+        return isGlobalEnabled() && getBool(KEY_OTA_REBOOT_INTERCEPT);
     }
 
     public static boolean isOtaUpdateDisabled() {
-        return getBool(KEY_OTA_UPDATE_DISABLED);
+        return isGlobalEnabled() && getBool(KEY_OTA_UPDATE_DISABLED);
     }
 
     public static boolean isAppStartHookEnabled() {
-        return getBool(KEY_APP_START_ENABLED);
+        return isGlobalEnabled() && getBool(KEY_APP_START_ENABLED);
     }
 
     /**
