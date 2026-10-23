@@ -1053,12 +1053,19 @@ public class SplitScreenHook {
     //
     // The exception is the split the system has just composed, which hands both halves an even
     // share of the screen (measured: primary to 953, secondary from 967) and then runs no further
-    // layout pass, so the ratio has to be applied here. One edge cannot claim that state: a drag
-    // released near the centre walks the primary edge through 953 on its way to the middle target
-    // and the strip follows it there. What a drag never produces is the even share as a pair --
-    // the half being left behind keeps its distance from the middle target (measured: primary 949
-    // with secondary 988, primary 958 with the strip still at 945) -- so both edges and the
-    // stopped strip have to name the same even split before it counts as a composition.
+    // layout pass, so the ratio has to be applied here. That even share as a *pair* is what a
+    // drag never produces: while a gesture is in flight only the stack under the finger is
+    // re-bounds, so the other half keeps its last committed edge (measured: primary 974 with
+    // secondary 513, primary 1421 with secondary 988), and once the gesture commits it rests on a
+    // snap target -- the ratio, the middle, or the mirror -- never on the mid-point between them.
+    // Across 215 readings from three sessions of dragging, the pair came out even exactly when
+    // the split had just been composed.
+    //
+    // The strip's own position is not used to prove that state, because through a composition it
+    // still names wherever the previous split left it (measured: 953 from the picker, 499, 72 and
+    // 29 from splits that had ended). Requiring it to have caught up made the composition branch
+    // answer only for the picker, so a split launched by our own broadcast -- whose strip has
+    // never been on screen -- fell through to the middle target and sat at 50%.
     private static int snapPosition(Object obj, int configured, int actual, int other) {
         int total = getTotalSize(obj);
         Object view = dividerViewController(obj);
@@ -1067,8 +1074,7 @@ public class SplitScreenHook {
         int mirrored = total - configured;
         int half = halfSplitPosition(obj, total);
         if (half >= 0) {
-            if (evenShare(actual, other, half, dividerGutter(obj))
-                    && dividerRestsAt(view, actual)) {
+            if (evenShare(actual, other, half, dividerGutter(obj))) {
                 return configured;
             }
             if (nearestTo(actual, middle, configured) && nearestTo(actual, middle, mirrored)) {
@@ -1083,15 +1089,6 @@ public class SplitScreenHook {
     // composition branch down rather than let it claim a mid-point and pin every split at half.
     private static boolean evenShare(int actual, int other, int half, int gutter) {
         return gutter > 0 && other > 0 && near(actual, half) && near(other, half + gutter);
-    }
-
-    // Whether the strip has come to rest on the edge the task rects report. A snap animation
-    // moves the two tasks to the target first and walks the strip behind them (measured: strip
-    // at 741 with the primary already at 974), so a strip naming another position means the
-    // gesture has not landed yet and the reading is of a split in transit, not at rest.
-    private static boolean dividerRestsAt(Object view, int edge) {
-        int live = getLivePosition(view);
-        return live <= 0 || near(live, edge);
     }
 
     // Whether {@code middle} is at least as close to {@code actual} as {@code other}.
