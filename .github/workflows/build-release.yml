@@ -34,12 +34,18 @@ jobs:
         KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        # versionName reads this so the APK carries the tag, not the runner's clock
+        VERSION_NAME: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
       run: ./gradlew assembleRelease
 
     - name: Get version info
       id: version
       run: |
-        VERSION_NAME=$(grep 'versionName' app/build.gradle | awk '{print $2}' | tr -d '"')
+        if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+          VERSION_NAME="${GITHUB_REF_NAME#v}"
+        else
+          VERSION_NAME="ci-$(date +%y%m%d%H%M)"
+        fi
         VERSION_CODE=$(grep 'versionCode' app/build.gradle | awk '{print $2}')
         echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
         echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT

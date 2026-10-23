@@ -3,6 +3,7 @@ plugins {
 }
 
 // 版本号带编译时刻：1.<年两位>.<月日时分>，如 1.26.10231415
+// CI 上由 VERSION_NAME 传进标签名，保证包里的版本与标签、Release 标题是同一个数
 def compiledAt = new Date()
 
 android {
@@ -13,8 +14,8 @@ android {
         applicationId "com.byd.dlink.customer"
         minSdk 29
         targetSdk 34
-        versionCode 218
-        versionName "1.${compiledAt.format('yy')}.${compiledAt.format('MMddHHmm')}"
+        versionCode 219
+        versionName System.getenv('VERSION_NAME') ?: "1.${compiledAt.format('yy')}.${compiledAt.format('MMddHHmm')}"
     }
 
     signingConfigs {
