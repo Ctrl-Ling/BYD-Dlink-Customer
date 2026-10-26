@@ -153,9 +153,11 @@ public class BarIconColourHook {
     /**
      * mIconTint is the only thing that reaches a status icon: applyIconTint reads it for every receiver
      * already registered, and the ones added later read it too. Writing it before that method runs means
-     * SystemUI's own distribution loop carries our answer. Standing the band down needs no undo, because
-     * the tint is recomputed by the ROM's applyDarkIntensity on the window change that made the app
-     * immersive, and this hook then leaves it alone.
+     * SystemUI's own distribution loop carries our answer. This is also the only lever an immersive screen
+     * leaves the status bar with: the day/night pair it ships holds the same colour twice, so the walk
+     * below can only re-ink through the tint. Standing the band down needs no undo, because the tint is
+     * recomputed by the ROM's applyDarkIntensity on the window change that made the app immersive -- and
+     * from then on it is judged against the app's pixels, not left to whatever the ROM guessed.
      */
     private static void hookStatusIconTint(ClassLoader classLoader) {
         try {
@@ -625,9 +627,8 @@ public class BarIconColourHook {
 
     /** The colour bar ink has to be readable against, or null while that bar has no colour to judge. */
     private static Integer bandOf(int bar) {
-        return bandToJudge(bar == BAR_NAV
-                ? SystemBarBackgroundHook.navInkBackdrop()
-                : SystemBarBackgroundHook.statusBarColour());
+        return bandToJudge(bar == BAR_NAV ? SystemBarBackgroundHook.navInkBackdrop()
+                : SystemBarBackgroundHook.statusInkBackdrop());
     }
 
     private static String entryName(View view) {
@@ -686,7 +687,7 @@ public class BarIconColourHook {
 
     /** @return whether the tint the ROM computed was replaced with our contrast pick. */
     private static boolean writeIconTint(Object dispatcher) {
-        Integer band = bandToJudge(SystemBarBackgroundHook.statusBarColour());
+        Integer band = bandToJudge(SystemBarBackgroundHook.statusInkBackdrop());
         if (band == null || sIconTint == null || sLightTone == null || sDarkTone == null) {
             return false;
         }
@@ -703,7 +704,7 @@ public class BarIconColourHook {
 
     /** The id to ask the ROM for, or the one it asked for itself when there is nothing to judge. */
     private static int navColorId(int requested, View item) {
-        Integer band = bandToJudge(SystemBarBackgroundHook.navBarColour());
+        Integer band = bandToJudge(SystemBarBackgroundHook.navInkBackdrop());
         int id = band == null ? 0 : inkId(item.getResources(), band.intValue(), BAR_NAV);
         return id == 0 ? requested : id;
     }

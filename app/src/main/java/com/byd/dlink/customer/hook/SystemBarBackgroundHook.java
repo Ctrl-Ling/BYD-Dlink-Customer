@@ -64,14 +64,17 @@ public class SystemBarBackgroundHook {
     /** The thread the bars are drawn on; a transition is reported to us on a binder thread. */
     private static final Handler sMain = new Handler(Looper.getMainLooper());
 
-    // What each band is showing because we painted it. Null means the app owns that band, which is
-    // both the answer to "may we colour the icons on it" and the colour to judge them against.
+    // What each band is showing because we painted it. Null means the app owns that band, so the icons
+    // have to be judged against the app's pixels instead -- see sStatusInkBackdrop below.
     private static Integer sStatusBarColour;
     private static Integer sNavBarColour;
 
-    // What the nav keys have to be readable against, recorded with the decision that put the band
+    // What each bar's icons have to be readable against, recorded with the decision that put the band
     // there. Reading the display is what it costs to answer that, so it is asked once per decision
-    // and every icon that needs judging reads this instead.
+    // and every icon that needs judging reads this instead. It is not the same question as "what did
+    // we paint": a bar that stands down for an immersive screen paints nothing and still owes its
+    // icons an answer, because they are then drawn on the app's own pixels.
+    private static Integer sStatusInkBackdrop;
     private static Integer sNavInkBackdrop;
 
     // Whether a new screen has been reported since the bars were last decided. Something else's turn
@@ -163,6 +166,12 @@ public class SystemBarBackgroundHook {
                         // on the bar at the start of the switch instead of one layout later, which is
                         // the gap that shows as black between two screens.
                         apply();
+                        // The icons are the exception: a band stood down by this answer has to be read
+                        // against the app's frame, and that frame is only on the display one pass
+                        // later. So the band is settled now and the ink by the layout that draws it.
+                        if (aBandStoodDown()) {
+                            sRedecide = true;
+                        }
                     }
                 }
             });
@@ -193,7 +202,7 @@ public class SystemBarBackgroundHook {
         XC_MethodHook callback = new XC_MethodHook() {
             @Override
             protected void afterHookedMethod(MethodHookParam param) {
-                if (!needsSampling()) {
+                if (!readsDisplay()) {
                     return;
                 }
                 sMain.post(new Runnable() {
@@ -247,7 +256,7 @@ public class SystemBarBackgroundHook {
 
     /** A new app on screen: ask for the bars to be decided for it, by the layout that draws it. */
     private static void onTopPackage(String packageName) {
-        if (packageName == null || packageName.equals(sDecidedPackage) || !needsSampling()) {
+        if (packageName == null || packageName.equals(sDecidedPackage) || !readsDisplay()) {
             return;
         }
         sNamedPackage = packageName;
@@ -262,6 +271,30 @@ public class SystemBarBackgroundHook {
     private static boolean needsSampling() {
         return (PrefsManager.isStatusBarBgEnabled() && PrefsManager.isStatusBarBgAuto())
                 || (PrefsManager.isNavBarBgEnabled() && PrefsManager.isNavBarBgAuto());
+    }
+
+    /**
+     * Whether a decision has to read the display for the icons rather than for the band. A bar that
+     * keeps off an immersive screen leaves its icons on the app's pixels, and those are only on the
+     * screen once the app that owns them has been drawn -- so a new app is news for them too.
+     */
+    private static boolean needsInkSampling() {
+        return (PrefsManager.isStatusBarBgEnabled() && !PrefsManager.isStatusBarBgImmersiveEnabled())
+                || (PrefsManager.isNavBarBgEnabled() && !PrefsManager.isNavBarBgImmersiveEnabled());
+    }
+
+    /** Whether any part of the decision -- a band colour or an ink backdrop -- comes off the screen. */
+    private static boolean readsDisplay() {
+        return needsSampling() || needsInkSampling();
+    }
+
+    /**
+     * Whether the decision just taken left a band to the app. Only then do the icons have something on
+     * the incoming frame to be read against, so this is what a visibility event arms a second pass for.
+     */
+    private static boolean aBandStoodDown() {
+        return (PrefsManager.isStatusBarBgEnabled() && sStatusBarColour == null)
+                || (PrefsManager.isNavBarBgEnabled() && sNavBarColour == null);
     }
 
     /**
@@ -298,13 +331,16 @@ public class SystemBarBackgroundHook {
                 navAuto, PrefsManager.isNavBarBgImmersiveEnabled(),
                 PrefsManager.getNavigationBarBgColor());
         putColour(navPlateView(), sNavBarColour);
-        // Recorded here so judging the icons never costs a capture of its own. While the nav band is
-        // the app's, the keys sit on the app's own pixels, and those are read once per decision.
-        Integer ink = sNavBarColour != null ? sNavBarColour
-                : navBar == null || !PrefsManager.isNavBarBgEnabled()
-                        ? null : edgeColour(navBar, false);
-        boolean inkMoved = !java.util.Objects.equals(ink, sNavInkBackdrop);
-        sNavInkBackdrop = ink;
+        // Recorded here so judging the icons never costs a capture of its own. While a band is the
+        // app's, its icons sit on the app's own pixels, and those are read once per decision.
+        Integer statusInk = inkBackdrop(statusBar, sStatusBarColour,
+                PrefsManager.isStatusBarBgEnabled(), true);
+        Integer navInk = inkBackdrop(navBar, sNavBarColour,
+                PrefsManager.isNavBarBgEnabled(), false);
+        boolean inkMoved = !java.util.Objects.equals(statusInk, sStatusInkBackdrop)
+                || !java.util.Objects.equals(navInk, sNavInkBackdrop);
+        sStatusInkBackdrop = statusInk;
+        sNavInkBackdrop = navInk;
         // A bar SystemUI has not created yet has no colour to answer for, and that answer is still
         // owed; layouts ask again until both exist.
         sRedecide = statusBar == null || navBar == null;
@@ -315,7 +351,8 @@ public class SystemBarBackgroundHook {
         // app in front, not a frame of its own. This line is how a scroll inside one app is proved --
         // one per switch is the answer, anything more is the bar re-reading the display per frame.
         XposedBridge.log(TAG + ": decided app=" + sDecidedPackage + " status=" + hex(sStatusBarColour)
-                + " nav=" + hex(sNavBarColour));
+                + " nav=" + hex(sNavBarColour) + " ink=" + hex(sStatusInkBackdrop)
+                + "/" + hex(sNavInkBackdrop));
     }
 
     /** What a band is showing, in the words a log line can be read in: {@code app} means we own none. */
@@ -432,6 +469,19 @@ public class SystemBarBackgroundHook {
         return colour;
     }
 
+    /**
+     * What one bar's icons have to be readable against: the colour we painted, or -- when the band was
+     * stood down and the app shows through -- the app's own edge. A stand-down still leaves the icons
+     * needing ink that reads against those pixels, because BYD does not re-decide a key once it has
+     * tinted one, so a stale white filter survives onto a light screen.
+     */
+    private static Integer inkBackdrop(View bar, Integer painted, boolean enabled, boolean below) {
+        if (painted != null) {
+            return painted;
+        }
+        return bar == null || !enabled ? null : edgeColour(bar, below);
+    }
+
     private static Integer restore(View band) {
         putColour(band, null);
         return null;
@@ -510,9 +560,10 @@ public class SystemBarBackgroundHook {
 
     /**
      * Whether our colour is what the bar's band is showing right now, and which colour that is.
-     * Anything that wants to judge the look of the band -- icon contrast is the case that matters
-     * -- has to agree with the pixels the user actually sees, so it asks here instead of re-reading
-     * the flags or the configured value, neither of which is the band once auto colour is on.
+     * Anything that wants to paint the band has to agree with the pixels the user actually sees, so it
+     * asks here instead of re-reading the flags or the configured value, neither of which is the band
+     * once auto colour is on. Judging an icon against the band asks the ink accessors below: an icon
+     * still has something to read against when the band is the app's.
      */
     public static Integer statusBarColour() {
         return sStatusBarColour;
@@ -533,6 +584,11 @@ public class SystemBarBackgroundHook {
      */
     public static Integer navInkBackdrop() {
         return sNavInkBackdrop;
+    }
+
+    /** The status icons' own backdrop, for the same reason and with the same cost. */
+    public static Integer statusInkBackdrop() {
+        return sStatusInkBackdrop;
     }
 
     /** The configuration changed, so the bars have to be decided again for the app already in front. */
