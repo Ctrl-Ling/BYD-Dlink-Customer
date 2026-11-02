@@ -98,21 +98,9 @@ public class BarContentCentreHook {
     }
 
     private static boolean isBarContainer(View view) {
-        String name = entryName(view);
+        String name = BarViews.entryName(view);
         return name != null && (contains(BAR_CONTAINERS, name)
                 || sContentFillsBar && contains(DLINK34_BAR_CONTAINERS, name));
-    }
-
-    private static String entryName(View view) {
-        int id = view.getId();
-        if (id == 0) {
-            return null;
-        }
-        try {
-            return view.getResources().getResourceEntryName(id);
-        } catch (Throwable t) {
-            return null;
-        }
     }
 
     private static boolean contains(String[] names, String name) {
