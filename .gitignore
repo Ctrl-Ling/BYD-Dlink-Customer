@@ -67,6 +67,7 @@ lint/lint-results.html
 
 # Scratch and decompile files
 .scratch/
+tmp/
 dexprobe/
 *.dexdump
 *.bak
