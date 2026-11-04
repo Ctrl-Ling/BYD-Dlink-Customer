@@ -58,10 +58,12 @@
     <string name="color_picker_invalid">Color code requires 6 (RRGGBB) or 8 (AARRGGBB) hex digits</string>
     <string name="color_picker_presets_title">Presets</string>
     <string name="bar_restart_title">Restart SystemUI?</string>
-    <string name="bar_restart_message">%1$s set to %2$s. SystemUI needs to restart to apply. Restart now?</string>
     <string name="bar_restart_yes">Yes, restart SystemUI</string>
     <string name="bar_restart_no">No</string>
     <string name="bar_restart_failed">Failed to restart SystemUI. Please reboot the device manually.</string>
+    <string name="bar_color_applies_after_restart">Takes effect after SystemUI restarts</string>
+    <string name="easter_egg_shown">Hidden features shown</string>
+    <string name="easter_egg_hidden">Hidden features concealed</string>
     <string name="entry_bar_bg_item_format">%1$s %2$s</string>
     <string name="entry_bar_bg_auto_format">%1$s Auto Color</string>
     <string name="bar_immersive_tag">·incl. immersive</string>

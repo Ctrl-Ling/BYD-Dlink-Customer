@@ -58,10 +58,12 @@
     <string name="color_picker_invalid">颜色编码需要 6 位（RRGGBB）或 8 位（AARRGGBB）十六进制</string>
     <string name="color_picker_presets_title">常用</string>
     <string name="bar_restart_title">是否软重启系统界面</string>
-    <string name="bar_restart_message">%1$s已设为 %2$s，需要重启系统界面（SystemUI）才能生效。是否现在替您重启？</string>
     <string name="bar_restart_yes">是，重启系统界面</string>
     <string name="bar_restart_no">否</string>
     <string name="bar_restart_failed">重启系统界面失败，请手动重启车机</string>
+    <string name="bar_color_applies_after_restart">重启系统界面后生效</string>
+    <string name="easter_egg_shown">已显示彩蛋功能</string>
+    <string name="easter_egg_hidden">已隐藏彩蛋功能</string>
     <string name="entry_bar_bg_item_format">%1$s %2$s</string>
     <string name="entry_bar_bg_auto_format">%1$s 自动变色</string>
     <string name="bar_immersive_tag">·含沉浸</string>

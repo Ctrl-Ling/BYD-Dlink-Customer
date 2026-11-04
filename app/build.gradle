@@ -14,7 +14,7 @@ android {
         applicationId "com.byd.dlink.customer"
         minSdk 29
         targetSdk 34
-        versionCode 221
+        versionCode 222
         versionName System.getenv('VERSION_NAME') ?: "1.${compiledAt.format('yy')}.${compiledAt.format('MMddHHmm')}"
     }
 

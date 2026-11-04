@@ -29,6 +29,10 @@ class SatValPanel extends View {
     private Shader valueShader;
     private int shaderWidth;
     private int shaderHeight;
+    // The hue the two gradients were built for. The pure hue is baked into the saturation gradient,
+    // so a panel sized for one hue has to be rebuilt when the hue bar moves -- remembering only the
+    // size left the field showing the hue it was first drawn with.
+    private float shaderHue = Float.NaN;
 
     SatValPanel(Context context) {
         super(context);
@@ -54,7 +58,8 @@ class SatValPanel extends View {
         if (width == 0 || height == 0) {
             return;
         }
-        if (saturationShader == null || shaderWidth != width || shaderHeight != height) {
+        if (saturationShader == null || shaderHue != hsv[0]
+                || shaderWidth != width || shaderHeight != height) {
             int pureHue = Color.HSVToColor(new float[]{hsv[0], 1f, 1f});
             saturationShader = new LinearGradient(0, 0, width, 0,
                     0xFFFFFFFF, pureHue, Shader.TileMode.CLAMP);
@@ -62,6 +67,7 @@ class SatValPanel extends View {
                     0x00000000, 0xFF000000, Shader.TileMode.CLAMP);
             shaderWidth = width;
             shaderHeight = height;
+            shaderHue = hsv[0];
         }
         background.setShader(saturationShader);
         canvas.drawRect(0, 0, width, height, background);

@@ -100,8 +100,23 @@ public class SettingsActivity extends AppCompatActivity {
     private ScrollView settingsScroll;
     private MaterialToolbar toolbar;
     private final View[] pages = new View[PAGE_COUNT];
+    private final View[] entryRows = new View[PAGE_COUNT];
     private final TextView[] entrySummaries = new TextView[PAGE_COUNT];
     private int page = PAGE_HOME;
+
+    // Easter egg: five features are concealed until the About card is tapped ten times in a row, and
+    // ten again puts them away. The counter is a live count of taps, not a timer, so it resets itself
+    // on the tenth; the window only exists so a stray ten taps over a minute does not trip it.
+    private static final String UI_STATE = "ui_state";
+    private static final String KEY_EASTER_EGG = "easter_egg_shown";
+    private static final int EASTER_EGG_TAPS = 10;
+    private static final long EASTER_EGG_TAP_WINDOW_MS = 1500L;
+    private View aboutCard;
+    private View otaRebootBlock;
+    private View otaDisableBlock;
+    private boolean easterEggShown;
+    private int easterEggTaps;
+    private long easterEggLastTapMs;
 
     private TextView systemVariantValue;
     private SwitchCompat globalSwitch;
@@ -168,6 +183,7 @@ public class SettingsActivity extends AppCompatActivity {
         setupAppStart();
         setupSeekBars();
         setupShellCommand();
+        setupEasterEgg();
         showPage(PAGE_HOME);
         // Rows are built by the setups above, so their summaries can only be filled in after them.
         updateEntrySummaries();
@@ -281,6 +297,9 @@ public class SettingsActivity extends AppCompatActivity {
         screenCornerSwitch = findViewById(R.id.screenCornerSwitch);
         screenCornerRow = findViewById(R.id.screenCornerRow);
         screenCornerValue = findViewById(R.id.screenCornerValueText);
+        aboutCard = findViewById(R.id.aboutCard);
+        otaRebootBlock = findViewById(R.id.otaRebootBlock);
+        otaDisableBlock = findViewById(R.id.otaDisableBlock);
     }
 
     /**
@@ -339,6 +358,7 @@ public class SettingsActivity extends AppCompatActivity {
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         params.topMargin = dp(16);
         parent.addView(row, params);
+        entryRows[index] = row;
     }
 
     /**
@@ -788,8 +808,11 @@ public class SettingsActivity extends AppCompatActivity {
     private void updateBarBackground(BarBackgroundControl control) {
         boolean on = control.toggle.isChecked();
         control.immersiveRow.setVisibility(on ? View.VISIBLE : View.GONE);
-        control.autoRow.setVisibility(on ? View.VISIBLE : View.GONE);
-        control.autoSummary.setVisibility(on && control.autoToggle.isChecked()
+        // Auto colour is an easter-egg feature: its row is put away until the egg is shown, and this
+        // is the one place that decides the row's visibility, so a later switch toggle cannot put it
+        // back on screen behind the egg.
+        control.autoRow.setVisibility(on && easterEggShown ? View.VISIBLE : View.GONE);
+        control.autoSummary.setVisibility(on && easterEggShown && control.autoToggle.isChecked()
                 ? View.VISIBLE : View.GONE);
         control.valueRow.setVisibility(on && !control.autoToggle.isChecked()
                 ? View.VISIBLE : View.GONE);
@@ -814,19 +837,11 @@ public class SettingsActivity extends AppCompatActivity {
                     setColorProperty(control, argb);
                     saveConfig();
                     updateBarBackground(control);
-                    showRestartNotice(control, argb);
+                    // A dialog that asked permission to kill SystemUI mid-drive was heavier than the
+                    // one fact worth saying: the new colour waits for SystemUI's next start.
+                    Toast.makeText(this, R.string.bar_color_applies_after_restart,
+                            Toast.LENGTH_SHORT).show();
                 });
-    }
-
-    /** The colour only reaches the bars when SystemUI reads it, which happens when SystemUI starts. */
-    private void showRestartNotice(BarBackgroundControl control, int argb) {
-        new AlertDialog.Builder(this)
-                .setTitle(R.string.bar_restart_title)
-                .setMessage(getString(R.string.bar_restart_message,
-                        getString(control.labelRes), PrefsManager.formatColor(argb)))
-                .setPositiveButton(R.string.bar_restart_yes, (dialog, which) -> restartSystemUi())
-                .setNegativeButton(R.string.bar_restart_no, null)
-                .show();
     }
 
     /**
@@ -2146,6 +2161,69 @@ public class SettingsActivity extends AppCompatActivity {
             clipboard.setPrimaryClip(ClipData.newPlainText("split_screen_cmd", command));
             Toast.makeText(this, R.string.command_copied, Toast.LENGTH_SHORT).show();
         });
+    }
+
+    /**
+     * Easter egg: five features (volume steps, the two update switches, and the two bars' auto colour)
+     * are put away until the About card is tapped ten times, and ten again puts them away. Only the
+     * controls are concealed -- a feature already switched on keeps running while hidden, because
+     * hiding a row is a screen tidying act and silently reverting someone's setting is not.
+     * <p>
+     * The flag lives in the app's own preferences, not in config.properties: that file is the channel
+     * the hooks read, and nothing in SystemUI has any business knowing how many times the About card
+     * was tapped.
+     */
+    private void setupEasterEgg() {
+        easterEggShown = getSharedPreferences(UI_STATE, MODE_PRIVATE)
+                .getBoolean(KEY_EASTER_EGG, false);
+        aboutCard.setOnClickListener(v -> onAboutTapped());
+        applyEasterEgg();
+    }
+
+    /**
+     * Ten taps within a row, where "a row" is one and a half seconds between consecutive taps -- so
+     * scrolling past and brushing the card ten times over a minute does not trip it, but a deliberate
+     * quick tap-tap-tap does. The count resets on the trip itself rather than on a timer, because a
+     * timer would need a runnable outliving the tap.
+     */
+    private void onAboutTapped() {
+        long now = android.os.SystemClock.uptimeMillis();
+        easterEggTaps = now - easterEggLastTapMs <= EASTER_EGG_TAP_WINDOW_MS
+                ? easterEggTaps + 1 : 1;
+        easterEggLastTapMs = now;
+        if (easterEggTaps < EASTER_EGG_TAPS) {
+            return;
+        }
+        easterEggTaps = 0;
+        easterEggShown = !easterEggShown;
+        getSharedPreferences(UI_STATE, MODE_PRIVATE).edit()
+                .putBoolean(KEY_EASTER_EGG, easterEggShown)
+                .apply();
+        applyEasterEgg();
+        Toast.makeText(this, easterEggShown ? R.string.easter_egg_shown : R.string.easter_egg_hidden,
+                Toast.LENGTH_SHORT).show();
+    }
+
+    /** Every concealed control answers to this one call, so the flag and the screen cannot drift. */
+    private void applyEasterEgg() {
+        int visibility = easterEggShown ? View.VISIBLE : View.GONE;
+        if (entryRows[PAGE_VOLUME] != null) {
+            entryRows[PAGE_VOLUME].setVisibility(visibility);
+        }
+        if (otaRebootBlock != null) {
+            otaRebootBlock.setVisibility(visibility);
+        }
+        if (otaDisableBlock != null) {
+            otaDisableBlock.setVisibility(visibility);
+        }
+        // The auto-colour rows live inside the bar cards and their own visibility depends on the
+        // bar switch too, so they are re-decided rather than set directly.
+        if (statusBarBgControl != null) {
+            updateBarBackground(statusBarBgControl);
+        }
+        if (navBarBgControl != null) {
+            updateBarBackground(navBarBgControl);
+        }
     }
 
     private void updateModuleStatus() {
