@@ -2165,9 +2165,12 @@ public class SettingsActivity extends AppCompatActivity {
 
     /**
      * Easter egg: five features (volume steps, the two update switches, and the two bars' auto colour)
-     * are put away until the About card is tapped ten times, and ten again puts them away. Only the
-     * controls are concealed -- a feature already switched on keeps running while hidden, because
-     * hiding a row is a screen tidying act and silently reverting someone's setting is not.
+     * are put away until the About card is tapped ten times, and ten again puts them away.
+     * <p>
+     * Concealing a feature also switches it off, because a hidden switch that keeps painting bars or
+     * swallowing reboots is a hook nobody can find or turn down. What is kept is everything the
+     * feature was configured with -- step counts, colours, the app list -- so showing the egg again
+     * needs one tap per switch rather than a re-setup.
      * <p>
      * The flag lives in the app's own preferences, not in config.properties: that file is the channel
      * the hooks read, and nothing in SystemUI has any business knowing how many times the About card
@@ -2204,7 +2207,11 @@ public class SettingsActivity extends AppCompatActivity {
                 Toast.LENGTH_SHORT).show();
     }
 
-    /** Every concealed control answers to this one call, so the flag and the screen cannot drift. */
+    /**
+     * Every concealed control answers to this one call, so the flag and the screen cannot drift.
+     * Hiding also takes the five hooks down with it; showing only reveals the controls, because
+     * switching a feature back on is a decision and turning it off is not.
+     */
     private void applyEasterEgg() {
         int visibility = easterEggShown ? View.VISIBLE : View.GONE;
         if (entryRows[PAGE_VOLUME] != null) {
@@ -2216,13 +2223,30 @@ public class SettingsActivity extends AppCompatActivity {
         if (otaDisableBlock != null) {
             otaDisableBlock.setVisibility(visibility);
         }
+        if (!easterEggShown) {
+            // Leaving the switch alone would leave the hook running, so the switches are what gets
+            // turned off -- the configured step counts, colours and app lists stay written.
+            turnOff(volumeSwitch);
+            turnOff(otaRebootSwitch);
+            turnOff(otaDisableSwitch);
+            turnOff(statusBarBgControl.autoToggle);
+            turnOff(navBarBgControl.autoToggle);
+        }
         // The auto-colour rows live inside the bar cards and their own visibility depends on the
         // bar switch too, so they are re-decided rather than set directly.
-        if (statusBarBgControl != null) {
-            updateBarBackground(statusBarBgControl);
-        }
-        if (navBarBgControl != null) {
-            updateBarBackground(navBarBgControl);
+        updateBarBackground(statusBarBgControl);
+        updateBarBackground(navBarBgControl);
+        updateEntrySummaries();
+    }
+
+    /**
+     * Off through the switch itself, so each feature's own listener lands the property and refreshes
+     * whatever else it owns. An already-off switch fires nothing, which is why hiding an egg whose
+     * features were never enabled costs no write at all.
+     */
+    private void turnOff(SwitchCompat toggle) {
+        if (toggle != null && toggle.isChecked()) {
+            toggle.setChecked(false);
         }
     }
 
